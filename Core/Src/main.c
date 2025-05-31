@@ -91,32 +91,41 @@ void WriteTemp(int temp)
 {
 	#define WIDTH        	28
 	#define HEIGHT 				32
-	//void myChar(char ch, const uint8_t * buff, uint8_t dest_w, uint8_t dest_h);
-	//void ssd1306_SetCursor(uint8_t x, uint8_t y);
-	//void ssd1306_UpdateScreen(void);
+	
 	char buff[3];
-	
-	if(temp >= 110)
-	{
-		ssd1306_Fill(White);
-		ssd1306_UpdateScreen();
-		HAL_Delay(UPDATE_MS);
-		ssd1306_Fill(Black);
-	}
-	
 	uint8_t dig = temp_to_str(temp, buff);
 	for(int i=0; i<dig; i++)
 	{
 		ssd1306_SetCursor(WIDTH * i, 0);
 		myChar(buff[i], Medium, WIDTH, HEIGHT);		
-	}
+	}	
 	
-	ssd1306_UpdateScreen();
+}
+
+uint8_t mV_to_str(int mV, char* str)
+{
+	
+	str[0] = '0' + mV / 10000;
+	mV %= 10000;
+	
+	str[1] = '0' + mV / 1000;
+	mV %= 1000;
+	
+	str[2] = '.';
+	
+	str[3] = '0' + mV / 100;
+	return 4;
 }
 
 void WriteVolt(int mV)
 {
-	
+	char buff[4];
+	uint8_t dig = mV_to_str(mV, buff);
+	for(int i=0; i<dig; i++)
+	{
+		ssd1306_SetCursor(96 + 7 * i, 0);
+		myChar(buff[i], SmallFont, 7, 8);		
+	}	
 }
 /* USER CODE END 0 */
 
@@ -159,6 +168,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	int8_t t = -50;
+	int mV = 8000;
   while (1)
   {
     /* USER CODE END WHILE */
@@ -166,8 +176,18 @@ int main(void)
     /* USER CODE BEGIN 3 */
 		ssd1306_Fill(Black);
 		WriteTemp(t++);
+		WriteVolt(mV);
+		mV+=100; if(mV>18000) mV = 8000;
+		ssd1306_UpdateScreen();
 		HAL_Delay(UPDATE_MS);
-		
+		if(t >= 110)
+		{
+			ssd1306_Fill(White);
+			ssd1306_UpdateScreen();
+			HAL_Delay(UPDATE_MS);
+			ssd1306_Fill(Black);
+		}
+	
 		
 		
   }
