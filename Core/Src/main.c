@@ -39,7 +39,7 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define UPDATE_MS 100
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -56,53 +56,68 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+extern const uint8_t SmallFont[];
+extern const uint8_t Medium[];
 
-void drawBitmap32x64(int x, int y, const uint8_t *bitmap) {
-  for (int col = 0; col < 32; col++) {
-    for (int byteRow = 0; byteRow < 8; byteRow++) {
-      uint8_t byte = bitmap[col * 8 + byteRow];
-      for (int bit = 0; bit < 8; bit++) {
-        if (byte & (1 << bit)) {
-					ssd1306_DrawPixel(x + col, y + byteRow * 8 + bit, White);
-        }
-      }
-    }
-  }
-}
-
-void DrawChar(char ch, int x_, int y_, const uint8_t *bitmap)
+uint8_t temp_to_str(int temp, char* str)
 {
-	uint8_t w = bitmap[0];
-	uint8_t h = bitmap[1];
-	uint8_t hB = h/8;
-	uint8_t first_ch_ascii = bitmap[2];
-	const uint8_t* dig = bitmap + 4 + (w * hB * (ch-first_ch_ascii));
-	for (int x = 0; x < w; x++)
-	{
-		for (int y = 0; y < hB; y++)
-		{
-			//DrawPageSeg(x, y, *(dig++))	;
-		}
-		//ssd1306_UpdateScreen();
+	uint8_t dig = 0;
+	str[0]=0;
+	
+	if(temp < 0) 
+	{ 
+		str[dig] = '-'; 
+		temp *= -1; 
+		dig = 1;		
+	}
+	if(temp>=100) 
+	{ 
+		str[dig] = '1'; 
+		temp -=100; 
+		dig = 1;		
 	}
 	
+	char d = '0' + temp/10;
+	if (str[0]=='1' || d!='0')
+		str[dig++] = d;
+		
+	temp = temp % 10;
+	str[dig++] = '0' + temp;
+		
+	return dig;
 }
 
-void fill(int y_)
+void WriteTemp(int temp)
 {
-	for (int y = 0; y < SSD1306_HEIGHT; y++)
+	#define WIDTH        	28
+	#define HEIGHT 				32
+	//void myChar(char ch, const uint8_t * buff, uint8_t dest_w, uint8_t dest_h);
+	//void ssd1306_SetCursor(uint8_t x, uint8_t y);
+	//void ssd1306_UpdateScreen(void);
+	char buff[3];
+	
+	if(temp >= 110)
 	{
-		for (int x = 0; x < SSD1306_WIDTH; x++)
-		{
-			if((x&1)&&(y&1)) 
-				ssd1306_DrawPixel(x, y, White);
-			else 
-				ssd1306_DrawPixel(x, y, Black);
-		}
+		ssd1306_Fill(White);
+		ssd1306_UpdateScreen();
+		HAL_Delay(UPDATE_MS);
+		ssd1306_Fill(Black);
 	}
 	
+	uint8_t dig = temp_to_str(temp, buff);
+	for(int i=0; i<dig; i++)
+	{
+		ssd1306_SetCursor(WIDTH * i, 0);
+		myChar(buff[i], Medium, WIDTH, HEIGHT);		
+	}
+	
+	ssd1306_UpdateScreen();
 }
-extern void tmp(void);
+
+void WriteVolt(int mV)
+{
+	
+}
 /* USER CODE END 0 */
 
 /**
@@ -138,55 +153,23 @@ int main(void)
   MX_LPTIM1_Init();
   /* USER CODE BEGIN 2 */
   ssd1306_Init();
-	
-	
-	
-	tmp();
-	
-	extern const SSD1306_Font_t Font_6x8;
-	extern const SSD1306_Font_t Font_16x26;
-	ssd1306_SetCursor(0,0);
-	ssd1306_WriteString("1234567890", Font_6x8, White);
-	ssd1306_UpdateScreen();
-	
-	/*ssd1306_SetCursor(0,0);
-	ssd1306_WriteString("1234567890", Font_16x26, White);
-	ssd1306_UpdateScreen();*/
-	
-	return 0;
-	for(int i=0; i<255; i++)
-	{
-		//DrawPageSeg(0, 0, i);
-		ssd1306_UpdateScreen();
-	}
-	//ssd1306_WriteString("7885", Font_16x24, White);
-	ssd1306_Fill(White);
-//	DrawChar('8', 0,  0, SmallFont);
-	ssd1306_UpdateScreen();
-	
-	for(int i=0; i<SSD1306_HEIGHT; i++)
-	{
-		//fill(i);
-		//ssd1306_UpdateScreen();
-	}
-	
-	//drawBitmap32x64(0,0,font_32x64_digit_8);
-	/*extern uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
-	for(int i=0; i<SSD1306_BUFFER_SIZE; i++) SSD1306_Buffer[i] = 0;
-	for(int i=0; i<SSD1306_BUFFER_SIZE; i++)
-	{
-		SSD1306_Buffer[i]=0xFF;
-		ssd1306_UpdateScreen();
-	}*/
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+	int8_t t = -50;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		ssd1306_Fill(Black);
+		WriteTemp(t++);
+		HAL_Delay(UPDATE_MS);
+		
+		
+		
   }
   /* USER CODE END 3 */
 }
