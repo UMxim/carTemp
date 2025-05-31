@@ -39,13 +39,22 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define UPDATE_MS 100
+#define UPDATE_MS 00
+#define ADC_COUNT 16
+#define GND_RES 	9980 // Резистор в делителе у земли
+#define POW_RES 	46950 // Резистор в делителе у питания 
+#define VREF			1224 // mV
+
+#define DS1621_I2C_ADDR	(0x4F<<1)
+#define DS1621_CFG		0xAC
+#define DS1621_START	0xEE
+#define DS1621_READ		0xAA
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint16_t v_ref;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,6 +67,45 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 extern const uint8_t SmallFont[];
 extern const uint8_t Medium[];
+
+uint16_t GetMedium(uint16_t* buff, int size)
+{
+		for (uint32_t i = 0; i < size - 1; i++) 
+		{
+		uint32_t min_idx = i;
+    for (uint32_t j = i + 1; j < size; j++) 
+		{
+			if (buff[j] < buff[min_idx])
+					min_idx = j;
+    }
+    uint16_t temp = buff[min_idx];
+    buff[min_idx] = buff[i];
+    buff[i] = temp;
+	}	
+	return buff[size >> 1];	
+}
+
+uint16_t Get_ADC(void)
+{
+	
+  // Запуск преобразования
+	uint16_t v[ADC_COUNT];	
+	uint16_t ref[ADC_COUNT];	
+	
+	for (int i=0; i< ADC_COUNT; i++)
+	{
+		HAL_ADC_Start(&hadc);		
+		if (HAL_ADC_PollForConversion(&hadc, 10) == HAL_OK)
+			v[i] = HAL_ADC_GetValue(&hadc);		
+		HAL_ADC_Start(&hadc);		
+		if (HAL_ADC_PollForConversion(&hadc, 10) == HAL_OK)
+			ref[i] = HAL_ADC_GetValue(&hadc);		
+	}
+	
+	v_ref = GetMedium(ref, ADC_COUNT);
+	uint16_t ans = GetMedium(v, ADC_COUNT);
+	return ans;
+}
 
 uint8_t temp_to_str(int temp, char* str)
 {
@@ -114,6 +162,7 @@ uint8_t mV_to_str(int mV, char* str)
 	str[2] = '.';
 	
 	str[3] = '0' + mV / 100;
+	
 	return 4;
 }
 
@@ -127,6 +176,34 @@ void WriteVolt(int mV)
 		myChar(buff[i], SmallFont, 7, 8);		
 	}	
 }
+
+int GetTemp(void)
+{
+	uint8_t temp[2];
+	HAL_I2C_Mem_Read(&hi2c1, DS1621_I2C_ADDR, DS1621_READ, 1, temp, 2, HAL_MAX_DELAY);
+	return (int8_t)temp[0];
+	
+}
+
+int Get_mV(void)
+{
+	uint16_t adc = Get_ADC();
+	uint64_t mV = (uint64_t)VREF * (uint64_t)adc *(uint64_t)(GND_RES + POW_RES);
+	mV /= ((uint64_t)v_ref * (uint64_t)GND_RES);
+	
+	return mV;
+}
+
+void DS1621_Init(void)
+{	
+	uint8_t cfg;
+	  
+	HAL_I2C_Mem_Read(&hi2c1, DS1621_I2C_ADDR, DS1621_CFG, 1, &cfg, 1, HAL_MAX_DELAY);
+	HAL_I2C_Mem_Write(&hi2c1, DS1621_I2C_ADDR, DS1621_CFG, 1, &cfg, 1, HAL_MAX_DELAY);
+	cfg = DS1621_START;
+	HAL_I2C_Master_Transmit(&hi2c1, DS1621_I2C_ADDR, &cfg, 1, HAL_MAX_DELAY);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -161,26 +238,28 @@ int main(void)
   MX_I2C1_Init();
   MX_LPTIM1_Init();
   /* USER CODE BEGIN 2 */
-  ssd1306_Init();
-
+	DS1621_Init();
+	ssd1306_Init();	
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	int8_t t = -50;
-	int mV = 8000;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+		int temp = GetTemp();
+		int mV = Get_mV();
+		
 		ssd1306_Fill(Black);
-		WriteTemp(t++);
+		WriteTemp(temp);
 		WriteVolt(mV);
-		mV+=100; if(mV>18000) mV = 8000;
+		
 		ssd1306_UpdateScreen();
 		HAL_Delay(UPDATE_MS);
-		if(t >= 110)
+		if(temp >= 110)
 		{
 			ssd1306_Fill(White);
 			ssd1306_UpdateScreen();
