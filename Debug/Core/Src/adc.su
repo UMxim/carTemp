@@ -1,0 +1,14 @@
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:1688:22:LL_ADC_SetCommonClock	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:1738:22:LL_ADC_SetCommonFrequencyMode	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:1797:22:LL_ADC_SetCommonPathInternalCh	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:1870:22:LL_ADC_SetClock	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:2154:22:LL_ADC_SetSamplingTimeCommonChannels	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:2342:22:LL_ADC_REG_SetSequencerScanDirection	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:2548:22:LL_ADC_REG_SetSequencerChAdd	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:3138:22:LL_ADC_SetOverSamplingScope	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:3306:22:LL_ADC_EnableInternalRegulator	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:3880:22:LL_ADC_DisableIT_EOC	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_adc.h:3891:22:LL_ADC_DisableIT_EOS	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_bus.h:786:22:LL_APB2_GRP1_EnableClock	24	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_bus.h:987:22:LL_IOP_GRP1_EnableClock	24	static
+../Core/Src/adc.c:28:6:MX_ADC_Init	80	static

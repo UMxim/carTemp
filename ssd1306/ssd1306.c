@@ -3,79 +3,70 @@
 #include <stdlib.h>
 #include <string.h>  // For memcpy
 
-#if defined(SSD1306_USE_I2C)
 
-void ssd1306_Reset(void) {
+#define FONT_DATA(height) {height, glyphs_##height, font_data_##height}
+//  User config
+#include "font_spleen-5x8_8.h"
+#include "font_ter-u32n_32.h"
+static struct
+{
+	uint8_t height;
+	const glyphs_t * const glyphs;
+	const unsigned char * const font_data;
+}fonts[]=
+{
+		FONT_DATA(8),
+		FONT_DATA(32)
+};
+// -User config
+
+static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
+static int(*_writeData)(uint8_t*buff, uint16_t size) = NULL;
+static void(*_delay_ms)(uint32_t delay) = NULL;
+
+void ssd1306_Reset(void)
+{
     /* for I2C - do nothing */
 }
 
-// Send a byte to the command register
-void ssd1306_WriteCommand(uint8_t byte) {
-    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x00, 1, &byte, 1, HAL_MAX_DELAY);
-}
-
 // Send data
-void ssd1306_WriteData(uint8_t* buffer, size_t buff_size) {
-    HAL_I2C_Mem_Write(&SSD1306_I2C_PORT, SSD1306_I2C_ADDR, 0x40, 1, buffer, buff_size, HAL_MAX_DELAY);
+void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
+{
+	if (!_writeData) return;
+	_writeData(buffer, buff_size);
 }
-
-#elif defined(SSD1306_USE_SPI)
-
-void ssd1306_Reset(void) {
-    // CS = High (not selected)
-    HAL_GPIO_WritePin(SSD1306_CS_Port, SSD1306_CS_Pin, GPIO_PIN_SET);
-
-    // Reset the OLED
-    HAL_GPIO_WritePin(SSD1306_Reset_Port, SSD1306_Reset_Pin, GPIO_PIN_RESET);
-    HAL_Delay(10);
-    HAL_GPIO_WritePin(SSD1306_Reset_Port, SSD1306_Reset_Pin, GPIO_PIN_SET);
-    HAL_Delay(10);
-}
-
 // Send a byte to the command register
-void ssd1306_WriteCommand(uint8_t byte) {
-    HAL_GPIO_WritePin(SSD1306_CS_Port, SSD1306_CS_Pin, GPIO_PIN_RESET); // select OLED
-    HAL_GPIO_WritePin(SSD1306_DC_Port, SSD1306_DC_Pin, GPIO_PIN_RESET); // command
-    HAL_SPI_Transmit(&SSD1306_SPI_PORT, (uint8_t *) &byte, 1, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(SSD1306_CS_Port, SSD1306_CS_Pin, GPIO_PIN_SET); // un-select OLED
+void ssd1306_WriteCommand(uint8_t byte)
+{
+	ssd1306_WriteData(&byte, 1);
 }
 
-// Send data
-void ssd1306_WriteData(uint8_t* buffer, size_t buff_size) {
-    HAL_GPIO_WritePin(SSD1306_CS_Port, SSD1306_CS_Pin, GPIO_PIN_RESET); // select OLED
-    HAL_GPIO_WritePin(SSD1306_DC_Port, SSD1306_DC_Pin, GPIO_PIN_SET); // data
-    HAL_SPI_Transmit(&SSD1306_SPI_PORT, buffer, buff_size, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(SSD1306_CS_Port, SSD1306_CS_Pin, GPIO_PIN_SET); // un-select OLED
-}
-
-#else
-#error "You should define SSD1306_USE_SPI or SSD1306_USE_I2C macro"
-#endif
-
-
-// Screenbuffer
-static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
 
 // Screen object
-static SSD1306_t SSD1306;
+static SSD1306_t SSD1306;///????????????????????????????????????????????????????
 
 /* Fills the Screenbuffer with values from a given buffer of a fixed length */
-SSD1306_Error_t ssd1306_FillBuffer(uint8_t* buf, uint32_t len) {
-    SSD1306_Error_t ret = SSD1306_ERR;
-    if (len <= SSD1306_BUFFER_SIZE) {
+int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
+{
+    int ret = -1;
+    if (len <= SSD1306_BUFFER_SIZE)
+    {
         memcpy(SSD1306_Buffer,buf,len);
-        ret = SSD1306_OK;
+        ret = 1;
     }
     return ret;
 }
 
 /* Initialize the oled screen */
-void ssd1306_Init(void) {
+void ssd1306_Init(int(*rxCallback)(uint8_t*buff, uint16_t size), void(*delayCallback)(uint32_t deelay_ms))
+{
+	_writeData = rxCallback;
+	_delay_ms = delayCallback;
     // Reset OLED
     ssd1306_Reset();
 
     // Wait for the screen to boot
-    HAL_Delay(100);
+    _delay_ms(100);
 
     // Init OLED
     ssd1306_SetDisplayOn(0); //display off
@@ -159,7 +150,7 @@ void ssd1306_Init(void) {
     ssd1306_SetDisplayOn(1); //--turn on SSD1306 panel
 
     // Clear screen
-    ssd1306_Fill(Black);
+    ssd1306_Fill(0);
     
     // Flush buffer to screen
     ssd1306_UpdateScreen();
@@ -172,19 +163,22 @@ void ssd1306_Init(void) {
 }
 
 /* Fill the whole screen with the given color */
-void ssd1306_Fill(SSD1306_COLOR color) {
-    memset(SSD1306_Buffer, (color == Black) ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
+void ssd1306_Fill(uint8_t color)
+{
+    memset(SSD1306_Buffer, color ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
 }
 
 /* Write the screenbuffer with changed to the screen */
-void ssd1306_UpdateScreen(void) {
+void ssd1306_UpdateScreen(void)
+{
     // Write data to each page of RAM. Number of pages
     // depends on the screen height:
     //
     //  * 32px   ==  4 pages
     //  * 64px   ==  8 pages
     //  * 128px  ==  16 pages
-    for(uint8_t i = 0; i < SSD1306_HEIGHT/8; i++) {
+    for(uint8_t i = 0; i < SSD1306_HEIGHT/8; i++)
+    {
         ssd1306_WriteCommand(0xB0 + i); // Set the current RAM page address.
         ssd1306_WriteCommand(0x00 + SSD1306_X_OFFSET_LOWER);
         ssd1306_WriteCommand(0x10 + SSD1306_X_OFFSET_UPPER);
@@ -198,110 +192,36 @@ void ssd1306_UpdateScreen(void) {
  * Y => Y Coordinate
  * color => Pixel color
  */
-void ssd1306_DrawPixel(uint8_t x, uint8_t y, SSD1306_COLOR color) {
-    if(x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) {
-        // Don't write outside the buffer
-        return;
-    }
-   
+void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t color)
+{
+    if(x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) return;
+
     // Draw in the right color
-    if(color == White) {
+    if(color)
+    {
         SSD1306_Buffer[x + (y / 8) * SSD1306_WIDTH] |= 1 << (y % 8);
-    } else { 
+    } else
+    {
         SSD1306_Buffer[x + (y / 8) * SSD1306_WIDTH] &= ~(1 << (y % 8));
     }
 }
 
-/*
- * Draw 1 char to the screen buffer
- * ch       => char om weg te schrijven
- * Font     => Font waarmee we gaan schrijven
- * color    => Black or White
- */
-// шрифты взяты из defaultfonts.h
-		
-const uint8_t SmallFont[]  =				//	Шрифт	SmallFont
-{												//
-0x06, 0x08, 0x2E, 12,							//	ширина символов (6), высота символов (8), код первого символа (32), количество символов (95)
-
-0x00, 0x00, 0x60, 0x60, 0x00, 0x00,				//	015)	0x2E=046	.
-0x00, 0x20, 0x10, 0x08, 0x04, 0x02,				//	016)	0x2F=047	/
-0x00, 0x3E, 0x51, 0x49, 0x45, 0x3E,				//	017)	0x30=048	0
-0x00, 0x00, 0x42, 0x7F, 0x40, 0x00,				//	018)	0x31=049	1
-0x00, 0x42, 0x61, 0x51, 0x49, 0x46,				//	019)	0x32=050	2
-0x00, 0x21, 0x41, 0x45, 0x4B, 0x31,				//	020)	0x33=051	3
-0x00, 0x18, 0x14, 0x12, 0x7F, 0x10,				//	021)	0x34=052	4
-0x00, 0x27, 0x45, 0x45, 0x45, 0x39,				//	022)	0x35=053	5
-0x00, 0x3C, 0x4A, 0x49, 0x49, 0x30,				//	023)	0x36=054	6
-0x00, 0x01, 0x71, 0x09, 0x05, 0x03,				//	024)	0x37=055	7
-0x00, 0x36, 0x49, 0x49, 0x49, 0x36,				//	025)	0x38=056	8
-0x00, 0x06, 0x49, 0x49, 0x29, 0x1E,				//	026)	0x39=057	9
-	
-};
-
-const uint8_t Medium[] =			// Шрифт для температуры. Расширим
-{																																
-0x0C,0x10,0x2D,13,																										//	ширина символов (12), высота символов (16), код первого символа (32), количество символов (176)	
-	
-0x00,0x00,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x00,0x00,0x00,0x00,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,	//	014)	0x2D=045	-
-0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x60,0x60,0x00,0x00,0x00,0x00,0x00,	//	015)	0x2E=046	.
-0x00,0x00,0x00,0x00,0x00,0x80,0xE0,0x78,0x1E,0x06,0x00,0x00,0x00,0x00,0x60,0x78,0x1E,0x07,0x01,0x00,0x00,0x00,0x00,0x00,	//	016)	0x2F=047	/
-0x00,0xF8,0xFC,0x0E,0x06,0x06,0x06,0x06,0x0E,0xFC,0xF8,0x00,0x00,0x1F,0x3F,0x70,0x60,0x60,0x60,0x60,0x70,0x3F,0x1F,0x00,	//	017)	0x30=048	0
-0x00,0x00,0x00,0x30,0x38,0x1C,0xFE,0xFE,0x06,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x60,0x7F,0x7F,0x60,0x00,0x00,0x00,	//	018)	0x31=049	1
-0x00,0x18,0x1C,0x1E,0x06,0x06,0x06,0x86,0xCE,0xFC,0x78,0x00,0x00,0x78,0x7C,0x7E,0x66,0x67,0x63,0x63,0x61,0x70,0x70,0x00,	//	019)	0x32=050	2
-0x00,0x0E,0x0E,0x06,0x06,0xC6,0xE6,0xF6,0xFE,0x9E,0x0E,0x00,0x00,0x18,0x38,0x78,0x60,0x60,0x60,0x60,0x71,0x3F,0x1F,0x00,	//	020)	0x33=051	3
-0x00,0x00,0x80,0xC0,0xE0,0x70,0x38,0x1C,0xFE,0xFE,0x06,0x00,0x00,0x07,0x07,0x07,0x06,0x06,0x06,0x66,0x7F,0x7F,0x66,0x00,	//	021)	0x34=052	4
-0x00,0xFE,0xFE,0xE6,0x66,0x66,0x66,0x66,0xE6,0xCE,0x8E,0x00,0x00,0x18,0x38,0x78,0x60,0x60,0x60,0x60,0x70,0x3F,0x1F,0x00,	//	022)	0x35=053	5
-0x00,0xF8,0xFC,0xCE,0xC6,0xC6,0xC6,0xC6,0xDE,0x9C,0x18,0x00,0x00,0x1F,0x3F,0x71,0x60,0x60,0x60,0x60,0x71,0x3F,0x1F,0x00,	//	023)	0x36=054	6
-0x00,0x1E,0x1E,0x06,0x06,0x06,0x06,0x86,0xE6,0x7E,0x1E,0x00,0x00,0x00,0x00,0x00,0x60,0x78,0x1E,0x07,0x01,0x00,0x00,0x00,	//	024)	0x37=055	7
-0x00,0x78,0xFC,0xCE,0x86,0x86,0x86,0x86,0xCE,0xFC,0x78,0x00,0x00,0x1E,0x3F,0x73,0x61,0x61,0x61,0x61,0x73,0x3F,0x1E,0x00,	//	025)	0x38=056	8
-0x00,0xF8,0xFC,0x8E,0x06,0x06,0x06,0x06,0x8E,0xFC,0xF8,0x00,0x00,0x18,0x39,0x7B,0x63,0x63,0x63,0x63,0x73,0x3F,0x1F,0x00,	//	026)	0x39=057	9
-
-};			
-
-
-
-uint8_t GetProportion(uint8_t x, uint8_t dest, uint8_t orig)	// Число. Требуемый размер. Родной размер
+static int find_font_index(uint8_t font_h)
 {
-	uint32_t res = (x<<8) * (orig<<8) / (dest <<8);
-	return res >> 8;
+	for (int i=0; i < sizeof(fonts)/sizeof(fonts[0]); i++)
+	{
+		if (fonts[i].height == font_h)
+			return i;
+	}
+	return -1;
 }
 
-void myChar(char ch, const uint8_t * buff, uint8_t dest_w, uint8_t dest_h)
+static int
+char ssd1306_WriteChar(char ch, uint8_t font_h, uint8_t color)
 {
-	uint8_t w = buff[0];
-	uint8_t h = buff[1];
-	uint8_t hB = h>>3;
-	if(dest_h == 0) dest_h = h;
-	if(dest_w == 0) dest_w = w;
-	uint8_t firstCh = buff[2];
-	uint8_t num = buff[3];	
-	if (ch < firstCh || ch >= (firstCh + num))
-		return;
-		
-	const uint8_t*font = &buff[4 + (ch - firstCh)*(w * hB)];// + (); смещениие вычислить	
-	uint8_t currByte, currBit, color;
-	for(int xx=0; xx<dest_w; xx++)
-		for(int yy=0; yy<dest_h; yy++)
-		{
-			uint8_t x = GetProportion(xx, dest_w, w);
-			uint8_t y = GetProportion(yy, dest_h, h);
-			
-			currByte = font[((y>>3) * w) + x];
-			currBit = y & 7;
-			color = (currByte >> currBit) & 1;
-			ssd1306_DrawPixel(SSD1306.CurrentX + xx, SSD1306.CurrentY + yy, color);
-		}	
-	return;	
-}
-
-char ssd1306_WriteChar(char ch, SSD1306_Font_t Font, SSD1306_COLOR color) {
     uint32_t i, b, j;
-    
-    // Check if character is valid
-    if (ch < 32 || ch > 126)
-        return 0;
-    
+    int index = find_font_index(font_h);
+    if (index < 0) return -1;
     // Char width is not equal to font width for proportional font
     const uint8_t char_width = Font.char_width ? Font.char_width[ch-32] : Font.width;
     // Check remaining space on current line

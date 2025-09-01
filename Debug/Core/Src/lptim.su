@@ -1,0 +1,10 @@
+../Drivers/CMSIS/Include/core_cm0plus.h:741:22:__NVIC_EnableIRQ	16	static
+../Drivers/CMSIS/Include/core_cm0plus.h:848:22:__NVIC_SetPriority	24	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:384:22:LL_LPTIM_SetUpdateMode	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:483:22:LL_LPTIM_SetCounterMode	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:559:22:LL_LPTIM_SetPolarity	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:597:22:LL_LPTIM_SetPrescaler	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:678:22:LL_LPTIM_TrigSw	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_lptim.h:789:22:LL_LPTIM_SetClockSource	16	static
+../Drivers/STM32L0xx_HAL_Driver/Inc/stm32l0xx_ll_bus.h:440:22:LL_APB1_GRP1_EnableClock	24	static
+../Core/Src/lptim.c:28:6:MX_LPTIM1_Init	8	static
