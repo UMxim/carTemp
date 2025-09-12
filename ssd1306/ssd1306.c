@@ -4,48 +4,36 @@
 #include <string.h>  // For memcpy
 
 
-#define FONT_DATA(height) {height, glyphs_##height, font_data_##height}
-//  User config
-#include "font_spleen-5x8_8.h"
-#include "font_ter-u32n_32.h"
-static struct
-{
-	uint8_t height;
-	const glyphs_t * const glyphs;
-	const unsigned char * const font_data;
-}fonts[]=
-{
-		FONT_DATA(8),
-		FONT_DATA(32)
-};
-// -User config
+// ========== User config ==========
+// В .h нельзя переносить. Там массив большой и статик. Везде будет выделяться
+#include "font_ter_u12b.h"
+#include "font_spleen_12x24.h"
+
+static const font_descriptor_t * const font_descr[] = {&font_ter_u12b, &font_spleen_12x24};
+// ========== -User config ==========
 
 static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
 static int(*_writeData)(uint8_t*buff, uint16_t size) = NULL;
-static void(*_delay_ms)(uint32_t delay) = NULL;
+static void(*_delay_ms)(uint32_t ms) = NULL;
 
-void ssd1306_Reset(void)
+static struct
 {
-    /* for I2C - do nothing */
-}
+    uint16_t CurrentX;
+    uint16_t CurrentY;
+    uint8_t Initialized;
+    uint8_t DisplayOn;
+} SSD1306;
 
-// Send data
-void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
+static void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
 {
-	if (!_writeData) return;
 	_writeData(buffer, buff_size);
 }
-// Send a byte to the command register
-void ssd1306_WriteCommand(uint8_t byte)
+
+static void ssd1306_WriteCommand(uint8_t byte)
 {
 	ssd1306_WriteData(&byte, 1);
 }
 
-
-// Screen object
-static SSD1306_t SSD1306;///????????????????????????????????????????????????????
-
-/* Fills the Screenbuffer with values from a given buffer of a fixed length */
 int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
 {
     int ret = -1;
@@ -58,12 +46,10 @@ int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
 }
 
 /* Initialize the oled screen */
-void ssd1306_Init(int(*rxCallback)(uint8_t*buff, uint16_t size), void(*delayCallback)(uint32_t deelay_ms))
+void ssd1306_Init(int(*writeCallback)(uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms))
 {
-	_writeData = rxCallback;
-	_delay_ms = delayCallback;
-    // Reset OLED
-    ssd1306_Reset();
+	_writeData = writeCallback;
+	_delay_ms = delay_ms;
 
     // Wait for the screen to boot
     _delay_ms(100);
@@ -163,9 +149,9 @@ void ssd1306_Init(int(*rxCallback)(uint8_t*buff, uint16_t size), void(*delayCall
 }
 
 /* Fill the whole screen with the given color */
-void ssd1306_Fill(uint8_t color)
+void ssd1306_Fill(SSD1306_COLOR color)
 {
-    memset(SSD1306_Buffer, color ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
+    memset(SSD1306_Buffer, (color == NORMAL) ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
 }
 
 /* Write the screenbuffer with changed to the screen */
@@ -192,12 +178,12 @@ void ssd1306_UpdateScreen(void)
  * Y => Y Coordinate
  * color => Pixel color
  */
-void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t color)
+void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t isSet)
 {
     if(x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) return;
 
     // Draw in the right color
-    if(color)
+    if(isSet)
     {
         SSD1306_Buffer[x + (y / 8) * SSD1306_WIDTH] |= 1 << (y % 8);
     } else
@@ -206,55 +192,58 @@ void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t color)
     }
 }
 
-static int find_font_index(uint8_t font_h)
+static glyphs_t* find_glyph(font_descriptor_t *descr, char ch)
 {
-	for (int i=0; i < sizeof(fonts)/sizeof(fonts[0]); i++)
-	{
-		if (fonts[i].height == font_h)
-			return i;
-	}
-	return -1;
+	for (int i = 0; i < descr->glyphs_num; i++)
+		if (descr->glyphs[i].ascii_code == ch)
+			return &descr->glyphs[i];
+	return NULL;
 }
 
-static int
-char ssd1306_WriteChar(char ch, uint8_t font_h, uint8_t color)
+static uint8_t get_bit_val(uint8_t *buff, uint16_t bit)
 {
-    uint32_t i, b, j;
-    int index = find_font_index(font_h);
-    if (index < 0) return -1;
-    // Char width is not equal to font width for proportional font
-    const uint8_t char_width = Font.char_width ? Font.char_width[ch-32] : Font.width;
+	uint8_t byte = bit >>3;
+	bit &= 7;
+	return buff[byte] & (1 << bit);
+}
+
+int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
+{
+    if ( (sizeof(font_descr)/sizeof(font_descr[0])) <= font_idx ) return -1;
+    font_descriptor_t * descr = font_descr[font_idx];
+
+    glyphs_t *glyph = find_glyph(descr, ch);
+    uint8_t height = descr->font_height;
+    uint8_t width = glyph ? glyph->width : descr->glyphs[0].width;
+
     // Check remaining space on current line
-    if (SSD1306_WIDTH < (SSD1306.CurrentX + char_width) ||
-        SSD1306_HEIGHT < (SSD1306.CurrentY + Font.height))
-    {
-        // Not enough space on current line
-        return 0;
-    }
+    if (SSD1306_WIDTH < (SSD1306.CurrentX + width) )
+    	width = SSD1306_WIDTH - SSD1306.CurrentX;
+    if (SSD1306_HEIGHT < (SSD1306.CurrentY + height) )
+    	height = SSD1306_HEIGHT - SSD1306.CurrentY;
     
     // Use the font to write
-    for(i = 0; i < Font.height; i++) {
-        b = Font.data[(ch - 32) * Font.height + i];
-        for(j = 0; j < char_width; j++) {
-            if((b << j) & 0x8000)  {
-                ssd1306_DrawPixel(SSD1306.CurrentX + j, (SSD1306.CurrentY + i), (SSD1306_COLOR) color);
-            } else {
-                ssd1306_DrawPixel(SSD1306.CurrentX + j, (SSD1306.CurrentY + i), (SSD1306_COLOR)!color);
+    for(int y = 0; y < height; y++)
+        for(int x = 0; x < width; x++)
+        	if (!glyph)
+                ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, 0);
+            else
+            {
+            	uint8_t c = get_bit_val(font_descr->font_data, glyph->bit_offset + y*width + x);
+                ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, (color == NORMAL) ? c : !c); // check
             }
-        }
-    }
-    
+
     // The current space is now taken
-    SSD1306.CurrentX += char_width;
+    SSD1306.CurrentX += width;
     
     // Return written char for validation
     return ch;
 }
 
 /* Write full string to screenbuffer */
-char ssd1306_WriteString(char* str, SSD1306_Font_t Font, SSD1306_COLOR color) {
+char ssd1306_WriteString(char* str, uint8_t font_idx, SSD1306_COLOR color) {
     while (*str) {
-        if (ssd1306_WriteChar(*str, Font, color) != *str) {
+        if (ssd1306_WriteChar(*str, font_idx, color) != *str) {
             // Char could not be written
             return *str;
         }
@@ -295,20 +284,6 @@ void ssd1306_Line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, SSD1306_COLOR 
             y1 += signY;
         }
     }
-    return;
-}
-
-/* Draw polyline */
-void ssd1306_Polyline(const SSD1306_VERTEX *par_vertex, uint16_t par_size, SSD1306_COLOR color) {
-    uint16_t i;
-    if(par_vertex == NULL) {
-        return;
-    }
-
-    for(i = 1; i < par_size; i++) {
-        ssd1306_Line(par_vertex[i - 1].x, par_vertex[i - 1].y, par_vertex[i].x, par_vertex[i].y, color);
-    }
-
     return;
 }
 
@@ -512,12 +487,12 @@ void ssd1306_FillRectangle(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, SSD13
     return;
 }
 
-SSD1306_Error_t ssd1306_InvertRectangle(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
+int ssd1306_InvertRectangle(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2) {
   if ((x2 >= SSD1306_WIDTH) || (y2 >= SSD1306_HEIGHT)) {
-    return SSD1306_ERR;
+    return -1;
   }
   if ((x1 > x2) || (y1 > y2)) {
-    return SSD1306_ERR;
+    return -1;
   }
   uint32_t i;
   if ((y1 / 8) != (y2 / 8)) {
@@ -539,7 +514,7 @@ SSD1306_Error_t ssd1306_InvertRectangle(uint8_t x1, uint8_t y1, uint8_t x2, uint
       SSD1306_Buffer[i] ^= mask;
     }
   }
-  return SSD1306_OK;
+  return 1;
 }
 
 /* Draw a bitmap */
