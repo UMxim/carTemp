@@ -24,12 +24,12 @@ static struct
     uint8_t DisplayOn;
 } SSD1306;
 
-static void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
+void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
 {
 	_writeData(buffer, buff_size);
 }
 
-static void ssd1306_WriteCommand(uint8_t byte)
+void ssd1306_WriteCommand(uint8_t byte)
 {
 	ssd1306_WriteData(&byte, 1);
 }
@@ -192,7 +192,7 @@ void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t isSet)
     }
 }
 
-static glyphs_t* find_glyph(font_descriptor_t *descr, char ch)
+static const glyphs_t* find_glyph(const font_descriptor_t *descr, char ch)
 {
 	for (int i = 0; i < descr->glyphs_num; i++)
 		if (descr->glyphs[i].ascii_code == ch)
@@ -200,7 +200,7 @@ static glyphs_t* find_glyph(font_descriptor_t *descr, char ch)
 	return NULL;
 }
 
-static uint8_t get_bit_val(uint8_t *buff, uint16_t bit)
+static uint8_t get_bit_val(const uint8_t *buff, uint16_t bit)
 {
 	uint8_t byte = bit >>3;
 	bit &= 7;
@@ -210,9 +210,9 @@ static uint8_t get_bit_val(uint8_t *buff, uint16_t bit)
 int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
 {
     if ( (sizeof(font_descr)/sizeof(font_descr[0])) <= font_idx ) return -1;
-    font_descriptor_t * descr = font_descr[font_idx];
+    const font_descriptor_t * descr = font_descr[font_idx];
 
-    glyphs_t *glyph = find_glyph(descr, ch);
+    const glyphs_t *glyph = find_glyph(descr, ch);
     uint8_t height = descr->font_height;
     uint8_t width = glyph ? glyph->width : descr->glyphs[0].width;
 
@@ -229,7 +229,7 @@ int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
                 ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, 0);
             else
             {
-            	uint8_t c = get_bit_val(font_descr->font_data, glyph->bit_offset + y*width + x);
+            	uint8_t c = get_bit_val(descr->font_data, glyph->bit_offset + y*width + x);
                 ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, (color == NORMAL) ? c : !c); // check
             }
 

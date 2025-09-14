@@ -45,8 +45,8 @@
 
         typedef struct
         {
-            unsigned char * font_data;
-            glyphs_t * glyphs;
+        	const unsigned char * font_data;
+        	const glyphs_t * glyphs;
             uint16_t font_data_size;
             uint8_t glyphs_num;
             uint8_t font_height;

@@ -2,3 +2,5 @@ MDK-ARM/temperature_in_car/
 STM32CubeIDE/Debug/Drivers/CMSIS/system_stm32l0xx.cyclo
 STM32CubeIDE/Debug/
 MDK-ARM/DebugConfig/
+Debug/
+.settings/

@@ -47,7 +47,7 @@ void ssd1306_Init(int(*writeCallback)(uint8_t*buff, uint16_t size), void(*delay_
 void ssd1306_Fill(SSD1306_COLOR color);
 void ssd1306_UpdateScreen(void);
 void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t isSet);
-char ssd1306_WriteChar(char ch, uint8_t font_h, SSD1306_COLOR color);
+int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color);
 char ssd1306_WriteString(char* str, uint8_t font_h, SSD1306_COLOR color);
 void ssd1306_SetCursor(uint8_t x, uint8_t y);
 void ssd1306_Line(uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2, SSD1306_COLOR color);

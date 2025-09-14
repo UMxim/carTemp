@@ -81,9 +81,9 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry excluding="ssd1306_tests.c|1" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="ssd1306"/>
+						<entry excluding="Src/main_old.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="ssd1306_tests.c|1" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="ssd1306"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -165,9 +165,9 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry excluding="ssd1306_tests.c|1" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="ssd1306"/>
+						<entry excluding="Src/main_old.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="ssd1306_tests.c|1" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="ssd1306"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
