@@ -141,16 +141,18 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles LPTIM1 global interrupt / LPTIM1 wake-up interrupt through EXTI line 29.
+  * @brief This function handles TIM2 global interrupt.
   */
-void LPTIM1_IRQHandler(void)
+void TIM2_IRQHandler(void)
 {
-  /* USER CODE BEGIN LPTIM1_IRQn 0 */
+  /* USER CODE BEGIN TIM2_IRQn 0 */
+	extern volatile uint32_t timer_ms_;
+	timer_ms_++;
+	LL_TIM_ClearFlag_UPDATE(TIM2);
+  /* USER CODE END TIM2_IRQn 0 */
+  /* USER CODE BEGIN TIM2_IRQn 1 */
 
-  /* USER CODE END LPTIM1_IRQn 0 */
-  /* USER CODE BEGIN LPTIM1_IRQn 1 */
-
-  /* USER CODE END LPTIM1_IRQn 1 */
+  /* USER CODE END TIM2_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

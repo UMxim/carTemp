@@ -4,3 +4,4 @@ STM32CubeIDE/Debug/
 MDK-ARM/DebugConfig/
 Debug/
 .settings/
+temperature_in_car Debug.launch
