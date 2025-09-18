@@ -6,13 +6,13 @@
 
 // ========== User config ==========
 // В .h нельзя переносить. Там массив большой и статик. Везде будет выделяться
-#include "font_ter_u12b.h"
-#include "font_spleen_12x24.h"
+#include "font_spleen_8x16.h"
+#include "font_spleen_16x32.h"
 
-static const font_descriptor_t * const font_descr[] = {&font_ter_u12b, &font_spleen_12x24};
+//static const font_descriptor_t * const font_descr[] = {&font_ter_u12b, &font_spleen_12x24};
+static const font_descriptor_t * const font_descr[] = {&font_spleen_8x16, &font_spleen_16x32};
 // ========== -User config ==========
-static uint8_t SSD1306_Buffer_for_write[SSD1306_BUFFER_SIZE+1]; // первый байт - признак данных, а потом видеобуфер
-static uint8_t * const SSD1306_Buffer = &SSD1306_Buffer_for_write[1];
+static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
 static int(*_writeData)(uint8_t reg, uint8_t*buff, uint16_t size) = NULL;
 static void(*_delay_ms)(uint32_t ms) = NULL;
 
@@ -136,7 +136,7 @@ void ssd1306_Init(int(*writeCallback)(uint8_t reg, uint8_t*buff, uint16_t size),
     ssd1306_SetDisplayOn(1); //--turn on SSD1306 panel
 
     // Clear screen
-    ssd1306_Fill(0);
+    ssd1306_Fill(SSD1306_COLOR_BLACK);
     
     // Flush buffer to screen
     ssd1306_UpdateScreen();
@@ -151,7 +151,7 @@ void ssd1306_Init(int(*writeCallback)(uint8_t reg, uint8_t*buff, uint16_t size),
 /* Fill the whole screen with the given color */
 void ssd1306_Fill(SSD1306_COLOR color)
 {
-    memset(SSD1306_Buffer, (color == NORMAL) ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
+    memset(SSD1306_Buffer, (color == SSD1306_COLOR_BLACK) ? 0x00 : 0xFF, sizeof(SSD1306_Buffer));
 }
 
 /* Write the screenbuffer with changed to the screen */
@@ -178,12 +178,12 @@ void ssd1306_UpdateScreen(void)
  * Y => Y Coordinate
  * color => Pixel color
  */
-void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t isSet)
+void ssd1306_DrawPixel(uint8_t x, uint8_t y, SSD1306_COLOR color)
 {
     if(x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) return;
 
     // Draw in the right color
-    if(isSet)
+    if(color == SSD1306_COLOR_WHITE)
     {
         SSD1306_Buffer[x + (y / 8) * SSD1306_WIDTH] |= 1 << (y % 8);
     } else
@@ -202,12 +202,12 @@ static const glyphs_t* find_glyph(const font_descriptor_t *descr, char ch)
 
 static uint8_t get_bit_val(const uint8_t *buff, uint16_t bit)
 {
-	uint8_t byte = bit >>3;
+	uint16_t byte = bit >>3;
 	bit &= 7;
 	return buff[byte] & (1 << bit);
 }
 
-int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
+int ssd1306_WriteChar(char ch, uint8_t font_idx, uint8_t isInvert)
 {
     if ( (sizeof(font_descr)/sizeof(font_descr[0])) <= font_idx ) return -1;
     const font_descriptor_t * descr = font_descr[font_idx];
@@ -230,7 +230,8 @@ int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
             else
             {
             	uint8_t c = get_bit_val(descr->font_data, glyph->bit_offset + y*width + x);
-                ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, (color == NORMAL) ? c : !c); // check
+            	c = isInvert ? !c : c;
+                ssd1306_DrawPixel(SSD1306.CurrentX + x, SSD1306.CurrentY + y, c ? SSD1306_COLOR_WHITE : SSD1306_COLOR_BLACK); // check
             }
 
     // The current space is now taken
@@ -241,9 +242,9 @@ int ssd1306_WriteChar(char ch, uint8_t font_idx, SSD1306_COLOR color)
 }
 
 /* Write full string to screenbuffer */
-char ssd1306_WriteString(char* str, uint8_t font_idx, SSD1306_COLOR color) {
+char ssd1306_WriteString(char* str, uint8_t font_idx, uint8_t isInvert) {
     while (*str) {
-        if (ssd1306_WriteChar(*str, font_idx, color) != *str) {
+        if (ssd1306_WriteChar(*str, font_idx, isInvert) != *str) {
             // Char could not be written
             return *str;
         }

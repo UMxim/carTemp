@@ -202,21 +202,42 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  delay_ms(1000);
+  delay_ms(100);
   ssd1306_Init(ssd1306_i2c_write, delay_ms);
 
 
 
-  ssd1306_DrawCircle(10, 10, 5, NORMAL);
+  //ssd1306_DrawCircle(10, 10, 5, SSD1306_COLOR_WHITE);
+  //ssd1306_UpdateScreen();
+
+  ssd1306_Fill(SSD1306_COLOR_BLACK);
+  ssd1306_SetCursor(0, 0);
+  ssd1306_WriteString("22:54", 1, 0);
+  ssd1306_SetCursor(80, 0);
+  ssd1306_WriteString(" 12.5v", 0, 0);
+  ssd1306_SetCursor(80, 16);
+  ssd1306_WriteString("  -28c", 0, 1);
   ssd1306_UpdateScreen();
+  /*for (int y=0; y<32; y++)
+	  for(int x=0; x<128; x++)
+	  {
+		  ssd1306_DrawPixel(x, y, SSD1306_COLOR_WHITE);
+		  ssd1306_UpdateScreen();
+	  }
+*/
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint8_t contrast = 0xFF;
+  ssd1306_SetContrast(0xFF);
+  ssd1306_SetContrast(1);
+  ssd1306_SetContrast(0);
   while (1)
   {
     /* USER CODE END WHILE */
-
+	  ssd1306_SetContrast(contrast--);
+	  delay_ms(10);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
