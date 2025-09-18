@@ -43,7 +43,7 @@ typedef enum {
 } SSD1306_COLOR;
 
 // Procedure definitions
-void ssd1306_Init(int(*writeCallback)(uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms));
+void ssd1306_Init(int(*writeCallback)(uint8_t reg, uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms));
 void ssd1306_Fill(SSD1306_COLOR color);
 void ssd1306_UpdateScreen(void);
 void ssd1306_DrawPixel(uint8_t x, uint8_t y, uint8_t isSet);
@@ -94,7 +94,7 @@ uint8_t ssd1306_GetDisplayOn(void);
 
 // Low-level procedures
 void ssd1306_WriteCommand(uint8_t byte);
-void ssd1306_WriteData(uint8_t* buffer, size_t buff_size);
+void ssd1306_WriteData(uint8_t reg, uint8_t* buffer, size_t buff_size);
 int ssd1306_FillBuffer(uint8_t* buf, uint32_t len);
 
 void myChar(char ch, const uint8_t * buff, uint8_t dest_w, uint8_t dest_h);

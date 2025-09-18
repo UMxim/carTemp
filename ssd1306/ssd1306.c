@@ -11,9 +11,9 @@
 
 static const font_descriptor_t * const font_descr[] = {&font_ter_u12b, &font_spleen_12x24};
 // ========== -User config ==========
-
-static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
-static int(*_writeData)(uint8_t*buff, uint16_t size) = NULL;
+static uint8_t SSD1306_Buffer_for_write[SSD1306_BUFFER_SIZE+1]; // первый байт - признак данных, а потом видеобуфер
+static uint8_t * const SSD1306_Buffer = &SSD1306_Buffer_for_write[1];
+static int(*_writeData)(uint8_t reg, uint8_t*buff, uint16_t size) = NULL;
 static void(*_delay_ms)(uint32_t ms) = NULL;
 
 static struct
@@ -24,14 +24,14 @@ static struct
     uint8_t DisplayOn;
 } SSD1306;
 
-void ssd1306_WriteData(uint8_t* buffer, size_t buff_size)
+void ssd1306_WriteData(uint8_t reg, uint8_t* buffer, size_t buff_size)
 {
-	_writeData(buffer, buff_size);
+	_writeData(reg, buffer, buff_size);
 }
 
 void ssd1306_WriteCommand(uint8_t byte)
 {
-	ssd1306_WriteData(&byte, 1);
+	ssd1306_WriteData(0x00, &byte, 1);
 }
 
 int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
@@ -46,7 +46,7 @@ int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
 }
 
 /* Initialize the oled screen */
-void ssd1306_Init(int(*writeCallback)(uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms))
+void ssd1306_Init(int(*writeCallback)(uint8_t reg, uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms))
 {
 	_writeData = writeCallback;
 	_delay_ms = delay_ms;
@@ -168,7 +168,7 @@ void ssd1306_UpdateScreen(void)
         ssd1306_WriteCommand(0xB0 + i); // Set the current RAM page address.
         ssd1306_WriteCommand(0x00 + SSD1306_X_OFFSET_LOWER);
         ssd1306_WriteCommand(0x10 + SSD1306_X_OFFSET_UPPER);
-        ssd1306_WriteData(&SSD1306_Buffer[SSD1306_WIDTH*i],SSD1306_WIDTH);
+        ssd1306_WriteData(0x40, &SSD1306_Buffer[SSD1306_WIDTH*i],SSD1306_WIDTH);
     }
 }
 

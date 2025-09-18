@@ -56,106 +56,102 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int i2c_write(uint8_t addr, uint8_t *buff, uint16_t size)
+
+#define _CHECK_I2C_STATE(I2Cn) do { \
+		  	  	  	  	  	  	if (--timeout == 0) return -5; \
+		        				if (LL_I2C_IsActiveFlag_NACK(I2Cn)) { LL_I2C_ClearFlag_NACK(I2Cn); return -2; } \
+		        				if (LL_I2C_IsActiveFlag_ARLO(I2Cn)) { LL_I2C_ClearFlag_ARLO(I2Cn); return -3; } \
+		        				if (LL_I2C_IsActiveFlag_BERR(I2Cn)) { LL_I2C_ClearFlag_BERR(I2Cn); return -4; } \
+		        				} while(0)
+
+int i2c_write(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size)
 {
-    if (!buff || size == 0) return -1;
+    if (!buff && !reg) return 0;
+    if (!reg_size && !size) return 0;
 
     // Старт + адрес устройства (запись)
-    LL_I2C_HandleTransfer(I2C1, addr, LL_I2C_ADDRSLAVE_7BIT,
-                          size, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
+    LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, reg_size + size, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
 
+    // Register
+    for (uint16_t i = 0; i < reg_size; i++)
+    {
+    	uint32_t timeout = 10000;
+    	while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))// Ждём, пока можно передавать
+    		_CHECK_I2C_STATE(I2Cx);
+    	LL_I2C_TransmitData8(I2Cx, reg[i]);
+    }
+
+    // Data
     for (uint16_t i = 0; i < size; i++)
     {
-        // Ждём, пока можно передавать
-        while (!LL_I2C_IsActiveFlag_TXIS(I2C1))
-        {
-            // Проверка на ошибки (NACK, Arbitration Lost, Bus Error)
-            if (LL_I2C_IsActiveFlag_NACK(I2C1))
-            {
-                LL_I2C_ClearFlag_NACK(I2C1);
-                return -2; // NACK — устройство не ответило
-            }
-            if (LL_I2C_IsActiveFlag_ARLO(I2C1))
-            {
-                LL_I2C_ClearFlag_ARLO(I2C1);
-                return -3; // Arbitration Lost
-            }
-            if (LL_I2C_IsActiveFlag_BERR(I2C1))
-            {
-                LL_I2C_ClearFlag_BERR(I2C1);
-                return -4; // Bus Error
-            }
-        }
-
-        // Передаём байт
-        LL_I2C_TransmitData8(I2C1, buff[i]);
+    	uint32_t timeout = 10000;
+        while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))
+        	_CHECK_I2C_STATE(I2Cx);
+        LL_I2C_TransmitData8(I2Cx, buff[i]);
     }
 
     // Ждём STOP
-    while (!LL_I2C_IsActiveFlag_STOP(I2C1));
-
+    uint32_t timeout = 10000;
+    while (!LL_I2C_IsActiveFlag_STOP(I2Cx))
+    	_CHECK_I2C_STATE(I2Cx);
     // Сбрасываем флаг STOP
-    LL_I2C_ClearFlag_STOP(I2C1);
+    LL_I2C_ClearFlag_STOP(I2Cx);
 
-    return 0; // успех
+    return 1; // успех
 }
 
-int i2c_read(uint8_t addr, uint8_t reg, uint8_t *buff, uint16_t size)
+int i2c_read(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size)
 {
-    if (!buff || size == 0) return -1;
-
-    // Этап 1: Запись регистра (без STOP — будет Repeated Start)
-    LL_I2C_HandleTransfer(I2C1, addr, LL_I2C_ADDRSLAVE_7BIT,
-                          1, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
-
-    // Ждём TXIS и передаём адрес регистра
-    uint32_t timeout = 10000;
-    while (!LL_I2C_IsActiveFlag_TXIS(I2C1))
-    {
-        if (--timeout == 0) return -5; // таймаут
-        if (LL_I2C_IsActiveFlag_NACK(I2C1)) { LL_I2C_ClearFlag_NACK(I2C1); return -2; }
-        if (LL_I2C_IsActiveFlag_ARLO(I2C1)) { LL_I2C_ClearFlag_ARLO(I2C1); return -3; }
-        if (LL_I2C_IsActiveFlag_BERR(I2C1)) { LL_I2C_ClearFlag_BERR(I2C1); return -4; }
+    // Проверка указателей
+    if ((reg == NULL && reg_size > 0) || (buff == NULL && size > 0)) {
+        return -1;
     }
-    LL_I2C_TransmitData8(I2C1, reg);
-
-    // Ждём TC (Transfer Complete) — конец передачи 1 байта без STOP
-    timeout = 10000;
-    while (!LL_I2C_IsActiveFlag_TC(I2C1))
-    {
-        if (--timeout == 0) return -5;
-        if (LL_I2C_IsActiveFlag_NACK(I2C1)) { LL_I2C_ClearFlag_NACK(I2C1); return -2; }
-        if (LL_I2C_IsActiveFlag_ARLO(I2C1)) { LL_I2C_ClearFlag_ARLO(I2C1); return -3; }
-        if (LL_I2C_IsActiveFlag_BERR(I2C1)) { LL_I2C_ClearFlag_BERR(I2C1); return -4; }
+    if (reg_size == 0 && size == 0) {
+        return 0; // ничего не делаем — успех
     }
 
-    // Этап 2: Чтение данных с Repeated Start
-    LL_I2C_HandleTransfer(I2C1, addr, LL_I2C_ADDRSLAVE_7BIT,
-                          size, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_RESTART_7BIT_READ);
+    uint32_t timeout;
 
-    // Читаем байты
-    for (uint16_t i = 0; i < size; i++)
+    // Этап 1: Запись регистра (если есть)
+    if (reg_size > 0)
     {
-        timeout = 10000;
-        while (!LL_I2C_IsActiveFlag_RXNE(I2C1)) // Данные готовы к чтению
+        LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, reg_size, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
+
+        for (uint16_t i = 0; i < reg_size; i++)
         {
-            if (--timeout == 0) return -5;
-            if (LL_I2C_IsActiveFlag_NACK(I2C1)) { LL_I2C_ClearFlag_NACK(I2C1); return -2; }
-            if (LL_I2C_IsActiveFlag_ARLO(I2C1)) { LL_I2C_ClearFlag_ARLO(I2C1); return -3; }
-            if (LL_I2C_IsActiveFlag_BERR(I2C1)) { LL_I2C_ClearFlag_BERR(I2C1); return -4; }
+            timeout = 10000;
+            while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))
+                _CHECK_I2C_STATE(I2Cx);
+            LL_I2C_TransmitData8(I2Cx, reg[i]);
         }
-        buff[i] = LL_I2C_ReceiveData8(I2C1);
+
+        // Ждём TC (Transfer Complete) — конец передачи без STOP
+        timeout = 10000;
+        while (!LL_I2C_IsActiveFlag_TC(I2Cx))
+            _CHECK_I2C_STATE(I2Cx);
     }
 
-    // Ждём STOP (автоматически сгенерирован в AUTOEND)
-    timeout = 10000;
-    while (!LL_I2C_IsActiveFlag_STOP(I2C1))
+    // Этап 2: Чтение данных
+    if (size > 0)
     {
-        if (--timeout == 0) return -5;
-    }
-    LL_I2C_ClearFlag_STOP(I2C1);
+        LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, size, LL_I2C_MODE_AUTOEND, reg_size > 0 ? LL_I2C_GENERATE_RESTART_7BIT_READ : LL_I2C_GENERATE_START_READ);
 
-    return 0; // успех
+        for (uint16_t i = 0; i < size; i++)
+        {
+            timeout = 10000;
+            while (!LL_I2C_IsActiveFlag_RXNE(I2Cx)) // Ждём готовности данных
+                _CHECK_I2C_STATE(I2Cx);
+            buff[i] = LL_I2C_ReceiveData8(I2Cx);
+        }
+
+        // Ждём STOP
+        timeout = 10000;
+        while (!LL_I2C_IsActiveFlag_STOP(I2Cx))
+            _CHECK_I2C_STATE(I2Cx);
+        LL_I2C_ClearFlag_STOP(I2Cx);
+    }
+
+    return 1; // успех
 }
 
 void delay_ms(uint32_t ms)
@@ -164,9 +160,9 @@ void delay_ms(uint32_t ms)
 	while(timer_ms_ - timestamp < ms);
 }
 
-int ssd1306_i2c_write(uint8_t*buff, uint16_t size)
+int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 {
-	return i2c_write(SSD1306_I2C_ADDR, buff, size);
+	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size);
 }
 /* USER CODE END 0 */
 
@@ -211,7 +207,7 @@ int main(void)
 
 
 
-    ssd1306_DrawPixel(5, 5, 1);
+  ssd1306_DrawCircle(10, 10, 5, NORMAL);
   ssd1306_UpdateScreen();
   /* USER CODE END 2 */
 
