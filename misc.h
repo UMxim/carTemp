@@ -2,14 +2,16 @@
 #define __MISC_H__
 
 // ================== DEFINES ==================
-#define u8	uint8_t
-#define i8	int8_t
-#define u16	uint16_t
-#define i16	int16_t
-#define u32	uint32_t
-#define i32 int32_t
 
+
+// Расчет напряжения из АЦП на основе значения АЦП референсного значения.(внутренний Vref в STM) 
+#define GET_mV(adc_val, adc_ref, ref_mV) ((uint16_t)(ref_mV) * (uint16_t)(adc_val) / (uint32_t)(adc_ref))
 
 // ================== FUNCTIONS ==================
-i16 GetMedian_16(i16 *arr, int n);
+
+// Поиск медианы массива. Массив сортируется, тоесть изменяется!
+uint16_t GetMedian_16(uint16_t * const arr, int n);
+
+// Число в строку. Указатель на выделенную строку(int = 32 бита, значит 11+1 символов), куда поместим результат с выравниванием вправо.
+int32_t Int_to_str(int32_t var, char str[12]);
 #endif //__MISC_H__
