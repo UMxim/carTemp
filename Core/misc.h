@@ -1,11 +1,15 @@
 #ifndef __MISC_H__
 #define __MISC_H__
 
+#include <stddef.h>
+#include <stdint.h>
 // ================== DEFINES ==================
 
 
 // Расчет напряжения из АЦП на основе значения АЦП референсного значения.(внутренний Vref в STM) 
-#define GET_mV(adc_val, adc_ref, ref_mV) ((uint16_t)(ref_mV) * (uint16_t)(adc_val) / (uint32_t)(adc_ref))
+
+#define GET_ADC_K(Vref_mV, ADCref) ( ((uint32_t)(Vref_mV)<<19) / ((uint32_t)(ADCref)) ) // коэфициент для вычисления mV из ADC. Vref_mV<=11бит поэтому при сдвиге влезем. ADCref не менее 10 бит, поэтому К не более 20 бита
+#define GET_mV(ADC_val, ADC_K) ( ((uint32_t)(ADC_val) * (uint32_t)(ADC_K)) >> 19 ) // Коэфициент вычисляется выше. 12 бит ADC_val и 20 бит ADC_K - влезаем.
 
 // ================== FUNCTIONS ==================
 
