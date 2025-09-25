@@ -18,4 +18,31 @@ uint16_t GetMedian_16(uint16_t * const arr, int n);
 
 // Число в строку. Указатель на выделенную строку(int = 32 бита, значит 11+1 символов), куда поместим результат с выравниванием вправо.
 int32_t Int_to_str(int32_t var, char str[12]);
+
+// Таймеры - отслеживание периодов времени
+typedef struct
+{
+	uint32_t timeStamp;
+	uint32_t period;
+} timer_t;
+
+static inline void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period)
+{
+	tim->timeStamp = current_time;
+	tim->period = period;
+}
+
+static inline uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
+{
+	if (current_time - tim->timeStamp >= tim->period)
+	{
+		tim->timeStamp += tim->period;
+		return 1;
+	}
+	return 0;
+}
+
+
+
+
 #endif //__MISC_H__

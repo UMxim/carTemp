@@ -39,6 +39,9 @@ extern "C" {
 void MX_I2C1_Init(void);
 
 /* USER CODE BEGIN Prototypes */
+int i2c_write(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size);
+
+int i2c_read(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size);
 
 /* USER CODE END Prototypes */
 

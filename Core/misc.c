@@ -54,3 +54,4 @@ int32_t Int_to_str(int32_t var, char str[12])
     
     return i; // Размер ненулевых элементов
 }
+

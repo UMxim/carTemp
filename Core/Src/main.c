@@ -25,7 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "misc.h"
 #include "ssd1306.h"
+#include "rtc_DS3231.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +48,12 @@
 
 /* USER CODE BEGIN PV */
 volatile uint32_t timer_ms_ = 0;
+
+struct
+{
+	DS3231_t time;
+	timer_t tim_update_screen;
+}cache;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,113 +65,46 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-#define _CHECK_I2C_STATE(I2Cn) do { \
-		  	  	  	  	  	  	if (--timeout == 0) return -5; \
-		        				if (LL_I2C_IsActiveFlag_NACK(I2Cn)) { LL_I2C_ClearFlag_NACK(I2Cn); return -2; } \
-		        				if (LL_I2C_IsActiveFlag_ARLO(I2Cn)) { LL_I2C_ClearFlag_ARLO(I2Cn); return -3; } \
-		        				if (LL_I2C_IsActiveFlag_BERR(I2Cn)) { LL_I2C_ClearFlag_BERR(I2Cn); return -4; } \
-		        				} while(0)
-
-int i2c_write(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size)
-{
-    if (!buff && !reg) return 0;
-    if (!reg_size && !size) return 0;
-
-    // Старт + адрес устройства (запись)
-    LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, reg_size + size, LL_I2C_MODE_AUTOEND, LL_I2C_GENERATE_START_WRITE);
-
-    // Register
-    for (uint16_t i = 0; i < reg_size; i++)
-    {
-    	uint32_t timeout = 10000;
-    	while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))// Ждём, пока можно передавать
-    		_CHECK_I2C_STATE(I2Cx);
-    	LL_I2C_TransmitData8(I2Cx, reg[i]);
-    }
-
-    // Data
-    for (uint16_t i = 0; i < size; i++)
-    {
-    	uint32_t timeout = 10000;
-        while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))
-        	_CHECK_I2C_STATE(I2Cx);
-        LL_I2C_TransmitData8(I2Cx, buff[i]);
-    }
-
-    // Ждём STOP
-    uint32_t timeout = 10000;
-    while (!LL_I2C_IsActiveFlag_STOP(I2Cx))
-    	_CHECK_I2C_STATE(I2Cx);
-    // Сбрасываем флаг STOP
-    LL_I2C_ClearFlag_STOP(I2Cx);
-
-    return 1; // успех
-}
-
-int i2c_read(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size)
-{
-    // Проверка указателей
-    if ((reg == NULL && reg_size > 0) || (buff == NULL && size > 0)) {
-        return -1;
-    }
-    if (reg_size == 0 && size == 0) {
-        return 0; // ничего не делаем — успех
-    }
-
-    uint32_t timeout;
-
-    // Этап 1: Запись регистра (если есть)
-    if (reg_size > 0)
-    {
-        LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, reg_size, LL_I2C_MODE_SOFTEND, LL_I2C_GENERATE_START_WRITE);
-
-        for (uint16_t i = 0; i < reg_size; i++)
-        {
-            timeout = 10000;
-            while (!LL_I2C_IsActiveFlag_TXIS(I2Cx))
-                _CHECK_I2C_STATE(I2Cx);
-            LL_I2C_TransmitData8(I2Cx, reg[i]);
-        }
-
-        // Ждём TC (Transfer Complete) — конец передачи без STOP
-        timeout = 10000;
-        while (!LL_I2C_IsActiveFlag_TC(I2Cx))
-            _CHECK_I2C_STATE(I2Cx);
-    }
-
-    // Этап 2: Чтение данных
-    if (size > 0)
-    {
-        LL_I2C_HandleTransfer(I2Cx, addr, LL_I2C_ADDRSLAVE_7BIT, size, LL_I2C_MODE_AUTOEND, reg_size > 0 ? LL_I2C_GENERATE_RESTART_7BIT_READ : LL_I2C_GENERATE_START_READ);
-
-        for (uint16_t i = 0; i < size; i++)
-        {
-            timeout = 10000;
-            while (!LL_I2C_IsActiveFlag_RXNE(I2Cx)) // Ждём готовности данных
-                _CHECK_I2C_STATE(I2Cx);
-            buff[i] = LL_I2C_ReceiveData8(I2Cx);
-        }
-
-        // Ждём STOP
-        timeout = 10000;
-        while (!LL_I2C_IsActiveFlag_STOP(I2Cx))
-            _CHECK_I2C_STATE(I2Cx);
-        LL_I2C_ClearFlag_STOP(I2Cx);
-    }
-
-    return 1; // успех
-}
-
 void delay_ms(uint32_t ms)
 {
-	uint32_t timestamp = timer_ms_;
-	while(timer_ms_ - timestamp < ms);
+	timer_t tim;
+	Timer_set(&tim, timer_ms_, ms);
+	while(!Timer_isExpired(&tim, timer_ms_));
 }
 
 int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 {
 	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size);
 }
+
+void Clock_cycle()
+{
+	static char time_str[6] = {[5]=0};
+	int res = DS3231_Read(&cache.time);
+	ssd1306_SetCursor(0, 0);
+	if (res > 0)
+	{
+		time_str[0] = '0' + cache.time.hours_10;
+		time_str[1] = '0' + cache.time.hours;
+		time_str[2] = time_str[2] == ' ' ? ':' :
+					  cache.time.EOSC == 0 ? ':' : ' ';
+
+		time_str[3] = '0' + cache.time.minutes_10;
+		time_str[4] = '0' + cache.time.minutes;
+	}
+	else
+	{
+		time_str[0] = ':';
+		time_str[1] = ':';
+		time_str[2] = '0' - res;
+		time_str[3] = ':';
+		time_str[4] = ':';
+	}
+	ssd1306_WriteString(time_str, 1, 0);
+}
+
+
+
 /* USER CODE END 0 */
 
 /**
@@ -218,6 +159,8 @@ int main(void)
   ssd1306_SetCursor(80, 16);
   ssd1306_WriteString("  -28c", 0, 1);
   ssd1306_UpdateScreen();
+
+  //res = DS1307_Read(&cache.time);
   /*for (int y=0; y<32; y++)
 	  for(int x=0; x<128; x++)
 	  {
@@ -229,16 +172,111 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint8_t contrast = 0xFF;
-  ssd1306_SetContrast(0xFF);
-  ssd1306_SetContrast(1);
-  ssd1306_SetContrast(0);
+  cache.time = (DS3231_t){
+      // === Текущее время и дата ===
+      .seconds      = 0,  // Секунды (0–9), младший разряд в BCD
+      .seconds_10   = 0,  // Секунды (0–5), десятки в BCD
+      .seconds_rfu  = 0,  // Зарезервировано (должно быть 0)
+
+      .minutes      = 8,  // Минуты (0–9), младший разряд в BCD
+      .minutes_10   = 2,  // Минуты (0–5), десятки в BCD
+      .minutes_rfu  = 0,  // Зарезервировано (должно быть 0)
+
+      .hours        = 3,  // Часы (0–9), младший разряд в BCD
+      .hours_10     = 2,  // Часы (0–2), десятки в BCD (макс. 2 для 24-часового режима)
+      .hours_12     = 0,  // 1 = 12-часовой режим, 0 = 24-часовой режим
+      .hours_rfu    = 0,  // Зарезервировано (должно быть 0)
+
+      .day          = 0,  // День недели (1–7, где 1 = воскресенье по умолчанию)
+      .day_rfu      = 0,  // Зарезервировано (должно быть 0)
+
+      .date         = 0,  // День месяца (1–9), младший разряд в BCD
+      .date_10      = 0,  // День месяца (0–3), десятки в BCD (макс. 31)
+      .date_rfu     = 0,  // Зарезервировано (должно быть 0)
+
+      .month        = 0,  // Месяц (1–9), младший разряд в BCD
+      .month_10     = 0,  // Месяц (0–1), десятки в BCD (макс. 12 → 1)
+      .month_rfu    = 0,  // Зарезервировано (должно быть 0)
+      .century      = 0,  // Флаг столетия: 1 = 20xx, 0 = 19xx
+
+      .year         = 0,  // Год (0–9), младший разряд в BCD (например, 5 для 2025)
+      .year_10      = 0,  // Год (0–9), десятки в BCD (например, 2 для 2025 → 25)
+
+      // === Будильник 1 ===
+      .a1_seconds      = 0,  // Секунды будильника 1 (0–9), BCD
+      .a1_seconds_10   = 0,  // Десятки секунд будильника 1 (0–5), BCD
+      .a1_m1           = 0,  // Бит маски A1M1: 1 = игнорировать секунды
+
+      .a1_minutes      = 0,  // Минуты будильника 1 (0–9), BCD
+      .a1_minutes_10   = 0,  // Десятки минут будильника 1 (0–5), BCD
+      .a1_m2           = 0,  // Бит маски A1M2: 1 = игнорировать минуты
+
+      .a1_hours        = 0,  // Часы будильника 1 (0–9), BCD
+      .a1_hours_10     = 0,  // Десятки часов будильника 1 (0–2), BCD
+      .a1_hours_12     = 0,  // Режим времени будильника: 1 = 12-часовой, 0 = 24-часовой
+      .a1_m3           = 0,  // Бит маски A1M3: 1 = игнорировать часы
+
+      .a1_date         = 0,  // День (месяца или недели) для будильника 1, BCD
+      .a1_date_10      = 0,  // Десятки дня (0–3), BCD
+      .a1_dy_dt        = 0,  // 1 = день недели, 0 = день месяца
+      .a1_m4           = 0,  // Бит маски A1M4: 1 = игнорировать дату/день недели
+
+      // === Будильник 2 ===
+      .a2_minutes      = 0,  // Минуты будильника 2 (0–9), BCD
+      .a2_minutes_10   = 0,  // Десятки минут будильника 2 (0–5), BCD
+      .a2_m2           = 0,  // Бит маски A2M2: 1 = игнорировать минуты
+
+      .a2_hours        = 0,  // Часы будильника 2 (0–9), BCD
+      .a2_hours_10     = 0,  // Десятки часов будильника 2 (0–2), BCD
+      .a2_hours_12     = 0,  // Режим времени будильника 2: 1 = 12-часовой, 0 = 24-часовой
+      .a2_m3           = 0,  // Бит маски A2M3: 1 = игнорировать часы
+
+      .a2_date         = 0,  // День (месяца или недели) для будильника 2, BCD
+      .a2_date_10      = 0,  // Десятки дня (0–3), BCD
+      .a2_dy_dt        = 0,  // 1 = день недели, 0 = день месяца
+      .a2_m4           = 0,  // Бит маски A2M4: 1 = игнорировать дату/день недели
+
+      // === Регистр Control (0x0E) ===
+      .a1_ie        = 0,  // Alarm 1 Interrupt Enable: 1 = разрешить прерывание от будильника 1
+      .a2_ie        = 0,  // Alarm 2 Interrupt Enable: 1 = разрешить прерывание от будильника 2
+      .int_cn       = 0,  // Interrupt Control: 1 = INT как прерывание, 0 = как square wave
+      .rs1          = 0,  // Rate Select 1 (вместе с rs2): частота SQW
+      .rs2          = 0,  // Rate Select 2
+      .conv         = 1,  // Convert Temperature: 1 = запуск измерения температуры
+      .bbsqw        = 0,  // Battery-Backed SQW: 1 = SQW активен при питании от батареи
+      .EOSC         = 0,  // Enable Oscillator: 1 = остановить генератор, 0 = запустить
+
+      // === Регистр Status (0x0F) ===
+      .a1f          = 0,  // Alarm 1 Flag: 1 = сработал будильник 1 (сбрасывается записью 0)
+      .a2f          = 0,  // Alarm 2 Flag: 1 = сработал будильник 2
+      .bsy          = 0,  // Busy: 1 = идёт запись в EEPROM (нельзя читать/писать)
+      .en32khz      = 0,  // Enable 32kHz Output: 1 = включить выход 32kHz
+      .cfg_rfu      = 0,  // Зарезервировано (должно быть 0)
+      .osf          = 0,  // Oscillator Stop Flag: 1 = генератор останавливался
+
+      // === Aging Offset (0x10) ===
+      .aging_offset_val = 0,  // Значение коррекции частоты (~0.1 ppm)
+      .aging_offset_sig = 0,  // Знак: 1 = отрицательная, 0 = положительная
+
+      // === Температура (0x11–0x12) ===
+      .temperature_MSB      = 0,  // Старший байт температуры (биты 15–8)
+
+      .temperature_LSB_rfu  = 0,  // Зарезервировано (всегда 0)
+      .temperature_LSB      = 0,  // Младшие 2 бита температуры: 00=.0°C, 01=.25°C, 10=.5°C, 11=.75°C
+  };
+
+  volatile uint8_t wr = 0;
+  if (wr) DS3231_Write(&cache.time);
+  Timer_set(&cache.tim_update_screen, timer_ms_, 500);
   while (1)
   {
     /* USER CODE END WHILE */
-	  ssd1306_SetContrast(contrast--);
-	  delay_ms(10);
+
     /* USER CODE BEGIN 3 */
+	  Clock_cycle();
+	  ssd1306_UpdateScreen();
+
+	  while(!Timer_isExpired(&cache.tim_update_screen, timer_ms_));
   }
   /* USER CODE END 3 */
 }
