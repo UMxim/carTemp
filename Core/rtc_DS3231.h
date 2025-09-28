@@ -110,8 +110,7 @@ typedef struct
 	uint8_t osf					:1; // Oscillator Stop Flag: 1 = генератор останавливался (потеря точности)
 
 	// Aging Offset Register (0x10)
-	uint8_t aging_offset_val	:7; // Значение коррекции частоты (в единицах ~0.1 ppm)
-	uint8_t aging_offset_sig	:1; // Знак: 1 = отрицательная коррекция, 0 = положительная
+	uint8_t aging_offset			:8; // Значение коррекции частоты (в единицах ~0.1 ppm). Кастовать в int8_t
 
 	// Temperature Registers (0x11–0x12)
 	uint8_t temperature_MSB		:8; // Старший байт температуры: биты 15–8 (в формате signed int) // Например: 0x19 = +25°C, 0xFF = -1°C
@@ -122,21 +121,14 @@ typedef struct
 
 #define DS3231_ADDR (0x68<<1)
 
-static inline int DS3231_Read(DS3231_t *time)
-{
-	uint8_t reg = 0;
-	return DS3231_I2C_READ(reg, (uint8_t*)time, sizeof(DS3231_t));
-}
+int DS3231_Read(DS3231_t *time);
 
-static inline int DS3231_Write(DS3231_t *time)
-{
-	uint8_t reg = 0;
-	return DS3231_I2C_WRITE(reg, (uint8_t *)time, sizeof(DS3231_t));
-}
+int DS3231_Write(DS3231_t *time);
 
-static inline int DS3231_Write_byte(uint8_t reg, uint8_t byte)
-{
-	return DS3231_I2C_WRITE(reg, &byte, 1);
-}
+int DS3231_Write_byte(uint8_t reg, uint8_t byte);
+
+uint32_t DS3231_date_to_sec(const DS3231_t * const time);
+
+int DS3231_correct(uint8_t new_hour, uint8_t new_minutes, uint8_t new_seconds, uint32_t *last_correct_sec);
 
 #endif //__RTC_DS3231_H__

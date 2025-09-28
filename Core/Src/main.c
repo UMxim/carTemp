@@ -255,8 +255,7 @@ int main(void)
       .osf          = 0,  // Oscillator Stop Flag: 1 = генератор останавливался
 
       // === Aging Offset (0x10) ===
-      .aging_offset_val = 0,  // Значение коррекции частоты (~0.1 ppm)
-      .aging_offset_sig = 0,  // Знак: 1 = отрицательная, 0 = положительная
+      .aging_offset = 0,  // Значение коррекции частоты (~0.1 ppm)
 
       // === Температура (0x11–0x12) ===
       .temperature_MSB      = 0,  // Старший байт температуры (биты 15–8)
@@ -266,7 +265,7 @@ int main(void)
   };
 
   volatile uint8_t wr = 0;
-  if (wr) DS3231_Write(&cache.time);
+  DS3231_Read(&cache.time);
   Timer_set(&cache.tim_update_screen, timer_ms_, 500);
   while (1)
   {
@@ -275,8 +274,14 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  Clock_cycle();
 	  ssd1306_UpdateScreen();
+	  if (wr)
+	  {
+		  DS3231_Write_byte(0x10, wr);
+		  DS3231_Write_byte(0x0E, 0x20);
 
+	  }
 	  while(!Timer_isExpired(&cache.tim_update_screen, timer_ms_));
+	  DS3231_Read(&cache.time);
   }
   /* USER CODE END 3 */
 }
