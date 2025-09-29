@@ -37,6 +37,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define TIMER_UPDATE_CLOCK_PERIOD_MS 500
+#define TIMER_CYCLE_PERIOD_MS 10
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -51,8 +53,14 @@ volatile uint32_t timer_ms_ = 0;
 
 struct
 {
+	// clock
 	DS3231_t time;
+	timer_t tim_update_clock;
 	timer_t tim_update_screen;
+	// display
+	uint8_t is_change;
+	// button
+
 }cache;
 /* USER CODE END PV */
 
@@ -77,30 +85,51 @@ int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size);
 }
 
+void Clock_init()
+{
+	Timer_set(&cache.tim_update_clock, timer_ms_, TIMER_UPDATE_CLOCK_PERIOD_MS);
+
+}
+
+int Clock_edit()
+{
+	return 0;
+}
+
 void Clock_cycle()
 {
+	static uint8_t cnt = 0;
 	static char time_str[6] = {[5]=0};
-	int res = DS3231_Read(&cache.time);
-	ssd1306_SetCursor(0, 0);
-	if (res > 0)
+	int res = 0;
+	if (Clock_edit()) return; // режим настройки
+	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_))
 	{
-		time_str[0] = '0' + cache.time.hours_10;
-		time_str[1] = '0' + cache.time.hours;
-		time_str[2] = time_str[2] == ' ' ? ':' :
-					  cache.time.EOSC == 0 ? ':' : ' ';
+		cnt++;
+		if (cnt & 1)
+			res = DS3231_Read(&cache.time);
+		ssd1306_SetCursor(0, 0);
+		if (res > 0)
+		{
+			time_str[0] = '0' + cache.time.hours_10;
+			time_str[1] = '0' + cache.time.hours;
+			time_str[2] = (!cache.time.EOSC) ? ':' :
+						  (cnt & 1) ? ' ' : ':';
+			time_str[3] = '0' + cache.time.minutes_10;
+			time_str[4] = '0' + cache.time.minutes;
+		}
+		else
+		{
+			time_str[0] = ':';
+			time_str[1] = ':';
+			time_str[2] = '0' - res;
+			time_str[3] = ':';
+			time_str[4] = ':';
+		}
 
-		time_str[3] = '0' + cache.time.minutes_10;
-		time_str[4] = '0' + cache.time.minutes;
-	}
-	else
-	{
-		time_str[0] = ':';
-		time_str[1] = ':';
-		time_str[2] = '0' - res;
-		time_str[3] = ':';
-		time_str[4] = ':';
+
 	}
 	ssd1306_WriteString(time_str, 1, 0);
+	cache.is_change = 1;
 }
 
 
@@ -267,6 +296,7 @@ int main(void)
   volatile uint8_t wr = 0;
   DS3231_Read(&cache.time);
   Timer_set(&cache.tim_update_screen, timer_ms_, 500);
+  Clock_init();
   while (1)
   {
     /* USER CODE END WHILE */
