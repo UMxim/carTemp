@@ -37,8 +37,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TIMER_UPDATE_CLOCK_PERIOD_MS 500
-#define TIMER_CYCLE_PERIOD_MS 10
+#define CLOCK_UPDATE_PERIOD_MS 			500
+#define BUTTON_UPDATE_PERIOD_MS 		10
+#define BUTTON_LONG_PRESS_COUNT_LIMIT	(10000/BUTTON_UPDATE_PERIOD_MS) // 10 сек
+#define BUTTON_PRESS_COUNT_LIMIT	    (100/BUTTON_UPDATE_PERIOD_MS) // 100 мсек
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -51,16 +54,19 @@
 /* USER CODE BEGIN PV */
 volatile uint32_t timer_ms_ = 0;
 
+enum button_state {BUTTON_IDLE = 0, BUTTON_PRESS, BUTTON_LPRESS};
+enum_button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
+
 struct
 {
 	// clock
 	DS3231_t time;
-	timer_t tim_update_clock;
-	timer_t tim_update_screen;
+	timer_t tim_update_clock;	
 	// display
 	uint8_t is_change;
 	// button
-
+	timer_t tim_update_button;	
+	enum button_state button_state[BUTTON_RESET+1];	
 }cache;
 /* USER CODE END PV */
 
@@ -85,6 +91,8 @@ int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size);
 }
 
+
+// ===== clock =====
 void Clock_init()
 {
 	Timer_set(&cache.tim_update_clock, timer_ms_, TIMER_UPDATE_CLOCK_PERIOD_MS);
@@ -93,27 +101,38 @@ void Clock_init()
 
 int Clock_edit()
 {
-	return 0;
+	static uint8_t state = 0;
+	switch (state)
+	{
+		case 0:
+			if (cache.button_state[BUTTON_RESET] == BUTTON_LPRESS)
+			{				
+				cache.button_state[BUTTON_RESET] = BUTTON_IDLE;
+				state = 1;
+			}
+			break;
+		case 1:
+			
+	}
+	return state;
 }
 
 void Clock_cycle()
 {
 	static uint8_t cnt = 0;
 	static char time_str[6] = {[5]=0};
-	int res = 0;
-	if (Clock_edit()) return; // режим настройки
+	int res = 0;	
 	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_))
 	{
+		if (Clock_edit()) return; // режим настройки
 		cnt++;
 		if (cnt & 1)
-			res = DS3231_Read(&cache.time);
-		ssd1306_SetCursor(0, 0);
+			res = DS3231_Read(&cache.time);		
 		if (res > 0)
 		{
 			time_str[0] = '0' + cache.time.hours_10;
 			time_str[1] = '0' + cache.time.hours;
-			time_str[2] = (!cache.time.EOSC) ? ':' :
-						  (cnt & 1) ? ' ' : ':';
+			time_str[2] = (cnt & 1) ? ' ' : ':';
 			time_str[3] = '0' + cache.time.minutes_10;
 			time_str[4] = '0' + cache.time.minutes;
 		}
@@ -125,15 +144,47 @@ void Clock_cycle()
 			time_str[3] = ':';
 			time_str[4] = ':';
 		}
-
-
+		ssd1306_SetCursor(0, 0);
+		ssd1306_WriteString(time_str, 1, 0);
+		cache.is_change = 1;
 	}
-	ssd1306_WriteString(time_str, 1, 0);
-	cache.is_change = 1;
+	
 }
 
+// ===== button =====
 
+void Button_init()
+{
+	Timer_set(&cache.tim_update_button, timer_ms_, TIMER_UPDATE_BUTTON_PERIOD_MS);
+}
 
+void Button_cycle()
+{
+	static uint32_t button_counter[BUTTON_RESET+1] = {0};
+	uint8_t button_press[BUTTON_RESET+1];
+	
+	if (Timer_isExpired(&cache.tim_update_button, timer_ms_))
+	{
+		button_press[BUTTON_LEFT] = (левая нога нажата) ? 1 : 0;
+		button_press[BUTTON_RIGHT] = (правая нога нажата) ? 1 : 0;
+		button_press[BUTTON_RESET] = (ресет нога нажата) ? 1 : 0;
+		
+		for (int i=BUTTON_LEFT; i<=BUTTON_RESET; i++)
+		{		
+			if (button_press[i]==1)
+				cache.button_counter[i]++;
+			else 
+			{
+				if ((cache.button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) &&
+					(cache.button_state[i] != BUTTON_LPRESS;))
+					cache.button_state[i] = BUTTON_PRESS;
+				cache.button_counter[i] = 0;
+			}
+			if (cache.button_counter[i] >= BUTTON_LONG_PRESS_COUNT_LIMIT)
+				cache.button_state[i] = BUTTON_LPRESS;
+		}			
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -297,12 +348,14 @@ int main(void)
   DS3231_Read(&cache.time);
   Timer_set(&cache.tim_update_screen, timer_ms_, 500);
   Clock_init();
+  Button_init();
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 	  Clock_cycle();
+	  Button_cycle();
 	  ssd1306_UpdateScreen();
 	  if (wr)
 	  {
