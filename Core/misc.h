@@ -34,6 +34,7 @@ static inline void Timer_set(timer_t *tim, uint32_t current_time, uint32_t perio
 
 static inline uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
 {
+	if (tim->period == 0) return 0; // не взведён
 	if (current_time - tim->timeStamp >= tim->period)
 	{
 		tim->timeStamp += tim->period;

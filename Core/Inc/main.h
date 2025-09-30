@@ -48,17 +48,29 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "misc.h"
+#include "ssd1306.h"
+#include "rtc_DS3231.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
+typedef struct 
+{
+	// clock
+	DS3231_t time;
+	timer_t tim_update_clock;
+	timer_t tim_update_screen;
+	// display
+	uint8_t is_change;
+	// button
+}cache_t;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-
+extern volatile uint32_t timer_ms_;
+extern cache_t cache;
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
