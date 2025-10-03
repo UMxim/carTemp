@@ -88,7 +88,7 @@ uint32_t DS3231_date_to_sec(const DS3231_t * const time)
     return days * 86400UL + (uint32_t)hour * 3600UL + (uint32_t)min * 60UL + (uint32_t)sec;
 }
 
-int DS3231_correct_with_date(uint8_t new_hour, uint8_t new_minutes, uint8_t new_seconds, uint32_t *last_correct_sec)
+int DS3231_correct(uint8_t new_hour, uint8_t new_minutes, uint8_t new_seconds, uint32_t *last_correct_sec)
 {
     if (new_hour > 23 || new_minutes > 59 || new_seconds > 59)
         return -1;

@@ -28,6 +28,8 @@
 #include "misc.h"
 #include "ssd1306.h"
 #include "rtc_DS3231.h"
+#include "stm32l0xx_ll_flash.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +43,9 @@
 #define BUTTON_UPDATE_PERIOD_MS 		10
 #define BUTTON_LONG_PRESS_COUNT_LIMIT	(10000/BUTTON_UPDATE_PERIOD_MS) // 10 сек
 #define BUTTON_PRESS_COUNT_LIMIT	    (100/BUTTON_UPDATE_PERIOD_MS) // 100 мсек
+
+#define EEPROM_BASE_ADDR    (0x08080000U)
+#define EEPROM_SIZE         (512U)  // байт
 
 /* USER CODE END PD */
 
@@ -58,12 +63,13 @@ enum button_state {BUTTON_IDLE = 0, BUTTON_PRESS, BUTTON_LPRESS};
 enum_button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
 
 struct
-{
+{	
 	// clock
 	DS3231_t time;
 	timer_t tim_update_clock;	
 	// display
 	uint8_t is_change;
+	timer_t tim_update_screen;
 	// button
 	timer_t tim_update_button;	
 	enum button_state button_state[BUTTON_RESET+1];	
@@ -78,6 +84,48 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+uint8_t EEPROM_ReadWord(uint16_t offset, uint32_t *pData)
+{
+    if (pData == NULL || offset > (EEPROM_SIZE - sizeof(uint32_t)) || (offset & 3) != 0)
+        return 1; // Неверный offset (не кратен 4 или за пределами)
+
+    *pData = *(volatile uint32_t*)(EEPROM_BASE_ADDR + offset);
+    return 0;
+}
+
+uint8_t EEPROM_WriteWord(uint16_t offset, uint32_t Data)
+{
+    if (offset > (EEPROM_SIZE - sizeof(uint32_t)) || (offset & 3) != 0)
+        return 1; // Неверный offset
+
+    uint32_t addr = EEPROM_BASE_ADDR + offset;
+
+    LL_FLASH_Unlock();
+
+    // Запись 32-битного слова
+    if (LL_FLASH_Program_Word(addr, Data) != 0)
+    {
+        LL_FLASH_Lock();
+        return 2; // Ошибка вызова
+    }
+
+    // Ожидание завершения
+    while (LL_FLASH_IsActiveFlag_BSY())
+    {
+        // Можно добавить таймаут при необходимости
+    }
+
+    // 🔍 Верификация
+    if (*(volatile uint32_t*)addr != Data)
+    {
+        LL_FLASH_Lock();
+        return 3; // Верификация не пройдена
+    }
+
+    LL_FLASH_Lock();
+    return 0; // Успех
+}
 
 void delay_ms(uint32_t ms)
 {
@@ -102,18 +150,63 @@ void Clock_init()
 int Clock_edit()
 {
 	static uint8_t state = 0;
+	static uint8_t new_hour, new_minutes;
+	uint8_t need_update = 0;
 	switch (state)
 	{
 		case 0:
 			if (cache.button_state[BUTTON_RESET] == BUTTON_LPRESS)
 			{				
 				cache.button_state[BUTTON_RESET] = BUTTON_IDLE;
+				new_hour = cache.time.hours_10 * 10 + cache.time.hours;
+				new_minutes = cache.time.minutes_10 * 10 + cache.time.minutes;
 				state = 1;
 			}
 			break;
 		case 1:
+			if (cache.button_state[BUTTON_LEFT] == BUTTON_PRESS)
+			{
+				new_hour = new_hour < 23 ? new_hour++ : 0;
+				cache.button_state[BUTTON_LEFT] = BUTTON_IDLE;
+				need_update = 1;
+			}
 			
+			if (cache.button_state[BUTTON_RIGHT] == BUTTON_PRESS)
+			{
+				new_minutes = new_minutes < 59 ? new_minutes++ : 0;
+				cache.button_state[BUTTON_RIGHT] = BUTTON_IDLE;
+				need_update = 1;
+			}
+				
+			if (cache.button_state[BUTTON_RESET] == BUTTON_PRESS)
+			{
+				uint32_t last_correct_sec;// Прочитать из еепррма
+				EEPROM_ReadWord(0, &last_correct_sec);
+				int res = DS3231_correct(new_hour, new_minutes, 0, &last_correct_sec);
+				if (res > 0 ) EEPROM_WriteWord(0, last_correct_sec); // а тут записать в еепром
+				res = DS3231_Read(&cache.time);		
+				cache.button_state[BUTTON_RESET] = BUTTON_IDLE;
+				state = 0;
+			}
+			if (need_update)
+			{
+				static char time_str[6] = {[5]=0};
+				time_str[0] = '0' + new_hour/10;
+				time_str[1] = '0' + new_hour%10;
+				time_str[2] = ' ';
+				time_str[3] = '0' + new_minutes/10;
+				time_str[4] = '0' + new_minutes%10;
+				ssd1306_SetCursor(0, 0);
+				ssd1306_WriteString(time_str, 1, 1);
+				cache.is_change = 1;
+			}
+			break;
+		default:
+			break;
 	}
+	
+	
+	
 	return state;
 }
 
@@ -172,15 +265,15 @@ void Button_cycle()
 		for (int i=BUTTON_LEFT; i<=BUTTON_RESET; i++)
 		{		
 			if (button_press[i]==1)
-				cache.button_counter[i]++;
+				button_counter[i]++;
 			else 
 			{
-				if ((cache.button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) &&
-					(cache.button_state[i] != BUTTON_LPRESS;))
+				if ((button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) &&
+					(cache.button_state[i] != BUTTON_LPRESS))
 					cache.button_state[i] = BUTTON_PRESS;
-				cache.button_counter[i] = 0;
+				button_counter[i] = 0;
 			}
-			if (cache.button_counter[i] >= BUTTON_LONG_PRESS_COUNT_LIMIT)
+			if (button_counter[i] >= BUTTON_LONG_PRESS_COUNT_LIMIT)
 				cache.button_state[i] = BUTTON_LPRESS;
 		}			
 	}
@@ -363,8 +456,8 @@ int main(void)
 		  DS3231_Write_byte(0x0E, 0x20);
 
 	  }
-	  while(!Timer_isExpired(&cache.tim_update_screen, timer_ms_));
-	  DS3231_Read(&cache.time);
+	 // while(!Timer_isExpired(&cache.tim_update_screen, timer_ms_));
+	  //DS3231_Read(&cache.time);
   }
   /* USER CODE END 3 */
 }
