@@ -28,7 +28,7 @@
 #include "misc.h"
 #include "ssd1306.h"
 #include "rtc_DS3231.h"
-#include "stm32l0xx_ll_flash.h"
+#include "stm32l011_my_hal.h"
 
 /* USER CODE END Includes */
 
@@ -39,13 +39,25 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CLOCK_UPDATE_PERIOD_MS 			500
+#define CLOCK_UPDATE_PERIOD_MS 			1000
 #define BUTTON_UPDATE_PERIOD_MS 		10
+#define ADC_UPDATE_PERIOD_MS 			100 // полный цикл. Если смотрим из 8 измерений - разделим на 8
+#define SCREEN_UPDATE_PERIOD_MS 		1000
+
+#define R_HI_V_ENG						102458 // В омах - верхний(на питании) резистор на Veng
+#define R_LO_V_ENG						12458
+#define R_HI_V_BAT						102458
+#define R_LO_V_BAT						12458
+#define R_HI_V_LIGHT					102458
+#define R_LO_V_LIGHT					12458
+
+#define V_BAT_HI_WARNING_mV				14600 // опасно высокое напряжение
+#define V_BAT_LO_WARNING_mV				12000 // опасно низкое напряжение
+#define V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
+
+#define ADC_AVRG_NUM					8 // количество измерений для вычисления медианы
 #define BUTTON_LONG_PRESS_COUNT_LIMIT	(10000/BUTTON_UPDATE_PERIOD_MS) // 10 сек
 #define BUTTON_PRESS_COUNT_LIMIT	    (100/BUTTON_UPDATE_PERIOD_MS) // 100 мсек
-
-#define EEPROM_BASE_ADDR    (0x08080000U)
-#define EEPROM_SIZE         (512U)  // байт
 
 /* USER CODE END PD */
 
@@ -60,19 +72,25 @@
 volatile uint32_t timer_ms_ = 0;
 
 enum button_state {BUTTON_IDLE = 0, BUTTON_PRESS, BUTTON_LPRESS};
-enum_button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
+enum button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
 
 struct
 {	
 	// clock
 	DS3231_t time;
 	timer_t tim_update_clock;	
-	// display
-	uint8_t is_change;
-	timer_t tim_update_screen;
 	// button
 	timer_t tim_update_button;	
 	enum button_state button_state[BUTTON_RESET+1];	
+	// screen
+	char is_screen_Update; // флаг быстрого обновления - не раз в секунду там,
+	timer_t tim_update_screen;
+	// adc
+	timer_t tim_update_adc;
+	uint32_t Veng_mV;
+	uint32_t Vbat_mV;
+	uint32_t Vlight_mV;
+
 }cache;
 /* USER CODE END PV */
 
@@ -85,47 +103,7 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-uint8_t EEPROM_ReadWord(uint16_t offset, uint32_t *pData)
-{
-    if (pData == NULL || offset > (EEPROM_SIZE - sizeof(uint32_t)) || (offset & 3) != 0)
-        return 1; // Неверный offset (не кратен 4 или за пределами)
 
-    *pData = *(volatile uint32_t*)(EEPROM_BASE_ADDR + offset);
-    return 0;
-}
-
-uint8_t EEPROM_WriteWord(uint16_t offset, uint32_t Data)
-{
-    if (offset > (EEPROM_SIZE - sizeof(uint32_t)) || (offset & 3) != 0)
-        return 1; // Неверный offset
-
-    uint32_t addr = EEPROM_BASE_ADDR + offset;
-
-    LL_FLASH_Unlock();
-
-    // Запись 32-битного слова
-    if (LL_FLASH_Program_Word(addr, Data) != 0)
-    {
-        LL_FLASH_Lock();
-        return 2; // Ошибка вызова
-    }
-
-    // Ожидание завершения
-    while (LL_FLASH_IsActiveFlag_BSY())
-    {
-        // Можно добавить таймаут при необходимости
-    }
-
-    // 🔍 Верификация
-    if (*(volatile uint32_t*)addr != Data)
-    {
-        LL_FLASH_Lock();
-        return 3; // Верификация не пройдена
-    }
-
-    LL_FLASH_Lock();
-    return 0; // Успех
-}
 
 void delay_ms(uint32_t ms)
 {
@@ -143,14 +121,15 @@ int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 // ===== clock =====
 void Clock_init()
 {
-	Timer_set(&cache.tim_update_clock, timer_ms_, TIMER_UPDATE_CLOCK_PERIOD_MS);
+	Timer_set(&cache.tim_update_clock, timer_ms_, CLOCK_UPDATE_PERIOD_MS);
 
 }
 
 int Clock_edit()
 {
 	static uint8_t state = 0;
-	static uint8_t new_hour, new_minutes;
+	static uint8_t new_hour = 0;
+	static uint8_t new_minutes = 0;
 	uint8_t need_update = 0;
 	switch (state)
 	{
@@ -166,22 +145,21 @@ int Clock_edit()
 		case 1:
 			if (cache.button_state[BUTTON_LEFT] == BUTTON_PRESS)
 			{
-				new_hour = new_hour < 23 ? new_hour++ : 0;
+				if (new_hour < 23) new_hour++ ; else new_hour = 0;
 				cache.button_state[BUTTON_LEFT] = BUTTON_IDLE;
 				need_update = 1;
 			}
 			
 			if (cache.button_state[BUTTON_RIGHT] == BUTTON_PRESS)
 			{
-				new_minutes = new_minutes < 59 ? new_minutes++ : 0;
+				if (new_minutes < 59) new_minutes++ ; else new_minutes = 0;
 				cache.button_state[BUTTON_RIGHT] = BUTTON_IDLE;
 				need_update = 1;
 			}
 				
 			if (cache.button_state[BUTTON_RESET] == BUTTON_PRESS)
 			{
-				uint32_t last_correct_sec;// Прочитать из еепррма
-				EEPROM_ReadWord(0, &last_correct_sec);
+				uint32_t last_correct_sec = EEPROM_ReadWord(0);// Прочитать из еепррма
 				int res = DS3231_correct(new_hour, new_minutes, 0, &last_correct_sec);
 				if (res > 0 ) EEPROM_WriteWord(0, last_correct_sec); // а тут записать в еепром
 				res = DS3231_Read(&cache.time);		
@@ -198,15 +176,12 @@ int Clock_edit()
 				time_str[4] = '0' + new_minutes%10;
 				ssd1306_SetCursor(0, 0);
 				ssd1306_WriteString(time_str, 1, 1);
-				cache.is_change = 1;
+				cache.is_screen_Update = 1;
 			}
 			break;
 		default:
 			break;
 	}
-	
-	
-	
 	return state;
 }
 
@@ -239,7 +214,6 @@ void Clock_cycle()
 		}
 		ssd1306_SetCursor(0, 0);
 		ssd1306_WriteString(time_str, 1, 0);
-		cache.is_change = 1;
 	}
 	
 }
@@ -248,7 +222,7 @@ void Clock_cycle()
 
 void Button_init()
 {
-	Timer_set(&cache.tim_update_button, timer_ms_, TIMER_UPDATE_BUTTON_PERIOD_MS);
+	Timer_set(&cache.tim_update_button, timer_ms_, BUTTON_UPDATE_PERIOD_MS);
 }
 
 void Button_cycle()
@@ -258,13 +232,13 @@ void Button_cycle()
 	
 	if (Timer_isExpired(&cache.tim_update_button, timer_ms_))
 	{
-		button_press[BUTTON_LEFT] = (левая нога нажата) ? 1 : 0;
-		button_press[BUTTON_RIGHT] = (правая нога нажата) ? 1 : 0;
-		button_press[BUTTON_RESET] = (ресет нога нажата) ? 1 : 0;
+		button_press[BUTTON_LEFT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5); // ~~~ изменить на реальные!!!
+		button_press[BUTTON_RIGHT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5);
+		button_press[BUTTON_RESET] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5);
 		
 		for (int i=BUTTON_LEFT; i<=BUTTON_RESET; i++)
 		{		
-			if (button_press[i]==1)
+			if (button_press[i])
 				button_counter[i]++;
 			else 
 			{
@@ -278,6 +252,67 @@ void Button_cycle()
 		}			
 	}
 }
+
+// ===== screen =====
+
+void Display_init()
+{
+	cache.is_screen_Update = 1;
+	Timer_set(&cache.tim_update_screen, timer_ms_, SCREEN_UPDATE_PERIOD_MS);
+}
+
+void Display_cycle()
+{
+	if (Timer_isExpired(&cache.tim_update_screen, timer_ms_) || cache.is_screen_Update)
+	{
+		uint8_t light = 0; //////////////////////////////////////////////////////////////////////////////// а что если 0?
+		///V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
+
+		ssd1306_UpdateScreen();
+		cache.is_screen_Update = 0;
+	}
+}
+
+// ===== adc =====
+
+void ADC_init()
+{
+	Timer_set(&cache.tim_update_adc, timer_ms_, ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
+}
+
+void ADC_cycle()
+{
+	enum channels_name { Veng = 0, Vbat, Vlight, Vref, size_};
+	#warning (correct channels num)
+	const uint32_t channels_[size_] = {LL_ADC_CHANNEL_1, LL_ADC_CHANNEL_3, LL_ADC_CHANNEL_11, LL_ADC_CHANNEL_VREFINT}; //
+	static uint16_t adc[size_][ADC_AVRG_NUM] = {0};
+	static uint8_t curr = 0;
+
+	if (!Timer_isExpired(&cache.tim_update_adc, timer_ms_)) return;
+	for (int i=Veng; i < size_; i++)
+	{
+		adc[i][curr] = Read_ADC_Channel(channels_[i]);
+	}
+	curr++;
+	if (curr == ADC_AVRG_NUM) // собрали весь набор. обрабатываем
+	{
+		curr = 0;
+
+		uint16_t V = GetMedian_16(&adc[Vref][0], ADC_AVRG_NUM); // медианное значение набора. переиспользуемая переменная
+		uint32_t k = GET_ADC_K(ADC_V_REF_mV, V);
+
+		V = GetMedian_16(&adc[Veng][0], ADC_AVRG_NUM);
+		cache.Veng_mV = GET_mV(V, k) * (R_HI_V_ENG + R_LO_V_ENG) / R_LO_V_ENG;
+
+		V = GetMedian_16(&adc[Vbat][0], ADC_AVRG_NUM);
+		cache.Vbat_mV = GET_mV(V, k) * (R_HI_V_BAT + R_LO_V_BAT) / R_LO_V_BAT;
+
+		V = GetMedian_16(&adc[Vlight][0], ADC_AVRG_NUM);
+		cache.Vlight_mV = GET_mV(V, k) * (R_HI_V_LIGHT + R_LO_V_LIGHT) / R_LO_V_LIGHT;
+	}
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -437,11 +472,12 @@ int main(void)
       .temperature_LSB      = 0,  // Младшие 2 бита температуры: 00=.0°C, 01=.25°C, 10=.5°C, 11=.75°C
   };
 
-  volatile uint8_t wr = 0;
-  DS3231_Read(&cache.time);
-  Timer_set(&cache.tim_update_screen, timer_ms_, 500);
+
   Clock_init();
   Button_init();
+  Display_init();
+
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -449,23 +485,14 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  Clock_cycle();
 	  Button_cycle();
-	  ssd1306_UpdateScreen();
-	  if (wr)
-	  {
-		  DS3231_Write_byte(0x10, wr);
-		  DS3231_Write_byte(0x0E, 0x20);
 
-	  }
-	 // while(!Timer_isExpired(&cache.tim_update_screen, timer_ms_));
-	  //DS3231_Read(&cache.time);
+
+	  Display_cycle(); // последний - обновляет экран
   }
   /* USER CODE END 3 */
 }
 
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+
 void SystemClock_Config(void)
 {
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_0);

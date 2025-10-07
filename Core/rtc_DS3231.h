@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 // ===== user settings =====
-#include "i2c.h"
+#include "stm32l011_my_hal.h"
 #define DS3231_I2C_WRITE(reg, data, size) i2c_write(I2C1, DS3231_ADDR, &reg, 1, data, size) // Задать функцию записи
 #define DS3231_I2C_READ(reg, data, size)  i2c_read (I2C1, DS3231_ADDR, &reg, 1, data, size)// Задать функцию чтения
 
