@@ -54,6 +54,7 @@
 #define V_BAT_HI_WARNING_mV				14600 // опасно высокое напряжение
 #define V_BAT_LO_WARNING_mV				12000 // опасно низкое напряжение
 #define V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
+#define V_LO_THRESHOLD_LIGHT_mV			8000 // Яркость изменяется от V_LO_THRESHOLD_LIGHT_mV до Vbat
 
 #define ADC_AVRG_NUM					8 // количество измерений для вычисления медианы
 #define BUTTON_LONG_PRESS_COUNT_LIMIT	(10000/BUTTON_UPDATE_PERIOD_MS) // 10 сек
@@ -114,7 +115,7 @@ void delay_ms(uint32_t ms)
 
 int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 {
-	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size);
+	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size); /// is this need realy?
 }
 
 
@@ -263,14 +264,23 @@ void Display_init()
 
 void Display_cycle()
 {
-	if (Timer_isExpired(&cache.tim_update_screen, timer_ms_) || cache.is_screen_Update)
+	// Яркость
+	static uint8_t light = 1;
+	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
+	uint8_t new_light = (cache.Vlight_mV > V_LO_THRESHOLD_LIGHT_mV) ? 0xFF - ( (cache.Vlight_mV - V_LO_THRESHOLD_LIGHT_mV) * 0xFF / (cache.Veng_mV - V_LO_THRESHOLD_LIGHT_mV) ) :	// подсветка включена. от 8 до 14 вольт
+						(cache.Veng_mV > V_LO_THRESHOLD_mV) ? 0xFF : 	// Едем но без фар
+						0x01;	// На батарейке
+	uint8_t delta = (new_light > light) ? new_light - light : light - new_light;
+	if(delta > 10) // 4%
 	{
-		uint8_t light = 0; //////////////////////////////////////////////////////////////////////////////// а что если 0?
-		///V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
-
-		ssd1306_UpdateScreen();
-		cache.is_screen_Update = 0;
+		ssd1306_SetContrast(light);
+		light = new_light;
 	}
+
+	if (Timer_isExpired(&cache.tim_update_screen, timer_ms_) || cache.is_screen_Update)
+		ssd1306_UpdateScreen();
+	cache.is_screen_Update = 0;
+
 }
 
 // ===== adc =====
