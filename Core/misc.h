@@ -26,24 +26,8 @@ typedef struct
 	uint32_t period;
 } timer_t;
 
-static inline void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period)
-{
-	tim->timeStamp = current_time;
-	tim->period = period;
-}
+void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period);
 
-static inline uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
-{
-	if (tim->period == 0) return 0; // не взведён или остановлен
-	if (current_time - tim->timeStamp >= tim->period)
-	{
-		tim->timeStamp += tim->period;
-		return 1;
-	}
-	return 0;
-}
-
-
-
+uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time);
 
 #endif //__MISC_H__

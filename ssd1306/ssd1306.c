@@ -8,13 +8,15 @@
 // В .h нельзя переносить. Там массив большой и статик. Везде будет выделяться
 #include "font_spleen_8x16.h"
 #include "font_spleen_16x32.h"
-
+#include "stm32l011_my_hal.h"
 //static const font_descriptor_t * const font_descr[] = {&font_ter_u12b, &font_spleen_12x24};
 static const font_descriptor_t * const font_descr[] = {&font_spleen_8x16, &font_spleen_16x32};
+void ssd1306_WriteData(uint8_t reg, uint8_t* buffer, size_t buff_size)
+{
+	i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, 1, buffer, buff_size);
+}
 // ========== -User config ==========
 static uint8_t SSD1306_Buffer[SSD1306_BUFFER_SIZE];
-static int(*_writeData)(uint8_t reg, uint8_t*buff, uint16_t size) = NULL;
-static void(*_delay_ms)(uint32_t ms) = NULL;
 
 static struct
 {
@@ -23,11 +25,6 @@ static struct
     uint8_t Initialized;
     uint8_t DisplayOn;
 } SSD1306;
-
-void ssd1306_WriteData(uint8_t reg, uint8_t* buffer, size_t buff_size)
-{
-	_writeData(reg, buffer, buff_size);
-}
 
 void ssd1306_WriteCommand(uint8_t byte)
 {
@@ -46,13 +43,10 @@ int ssd1306_FillBuffer(uint8_t* buf, uint32_t len)
 }
 
 /* Initialize the oled screen */
-void ssd1306_Init(int(*writeCallback)(uint8_t reg, uint8_t*buff, uint16_t size), void(*delay_ms)(uint32_t ms))
+void ssd1306_Init()
 {
-	_writeData = writeCallback;
-	_delay_ms = delay_ms;
-
     // Wait for the screen to boot
-    _delay_ms(100);
+	Timer_delay_ms(100);
 
     // Init OLED
     ssd1306_SetDisplayOn(0); //display off

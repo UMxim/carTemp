@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include "stm32l0xx_ll_i2c.h"
 #include "stm32l0xx_ll_adc.h"
+#include "stm32l0xx_ll_utils.h"
+#include "misc.h"
 // ===== I2C =====
 
 int i2c_write(I2C_TypeDef *I2Cx, uint8_t addr, uint8_t *reg, uint16_t reg_size, uint8_t *buff, uint16_t size);
@@ -31,5 +33,13 @@ void EEPROM_WriteWord(uint32_t offset, uint32_t data);
 
 uint16_t Read_ADC_Channel(uint32_t channel);
 #define ADC_V_REF_mV	1224	// Значение Vref у этого МК
+
+// ===== SysTick =====
+
+extern volatile uint32_t systick_ms;
+
+static inline void Timer_delay_ms(uint32_t ms) {LL_mDelay(ms);}
+
+static inline uint32_t Systick_get_counter() {return systick_ms;}
 
 #endif /* STM32L011_MY_HAL_H_ */

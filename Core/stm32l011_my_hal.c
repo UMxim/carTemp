@@ -6,6 +6,7 @@
  */
 #include "stm32l011_my_hal.h"
 
+
 // ===== I2C =====
 
 #define _CHECK_I2C_STATE(I2Cn) do { \
@@ -208,4 +209,6 @@ uint16_t Read_ADC_Channel(uint32_t channel) //  LL_ADC_CHANNEL_X или LL_ADC_C
     return LL_ADC_REG_ReadConversionData12(ADC1);
 }
 
+// ===== SysTick =====
 
+volatile uint32_t systick_ms = 0;

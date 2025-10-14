@@ -15,6 +15,7 @@ static void _Sort(uint16_t *arr, int n)
 }
 
 // ====== interface ======
+
 uint16_t GetMedian_16(uint16_t *arr, int n)
 {
 	_Sort(arr, n);
@@ -54,4 +55,24 @@ int32_t Int_to_str(int32_t var, char str[12])
     
     return i; // Размер ненулевых элементов
 }
+
+// ===== timers =====
+
+void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period)
+{
+	tim->timeStamp = current_time;
+	tim->period = period;
+}
+
+uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
+{
+	if (tim->period == 0) return 0; // не взведён или остановлен
+	if (current_time - tim->timeStamp >= tim->period)
+	{
+		tim->timeStamp += tim->period;
+		return 1;
+	}
+	return 0;
+}
+
 

@@ -20,7 +20,6 @@
 #include "main.h"
 #include "adc.h"
 #include "i2c.h"
-#include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -28,6 +27,7 @@
 #include "misc.h"
 #include "ssd1306.h"
 #include "rtc_DS3231.h"
+#include "ds1621.h"
 #include "stm32l011_my_hal.h"
 
 /* USER CODE END Includes */
@@ -41,7 +41,7 @@
 /* USER CODE BEGIN PD */
 #define CLOCK_UPDATE_PERIOD_MS 			500
 #define VOLTAGE_UPDATE_PERIOD_MS 		200
-#define TEMPERATURE_UPDATE_PERIOD_MS 	2000
+#define TEMPERATURE_UPDATE_PERIOD_MS 	1000
 
 #define BUTTON_UPDATE_PERIOD_MS 		10
 #define ADC_UPDATE_PERIOD_MS 			100 // полный цикл. Если смотрим из 8 измерений - разделим на 8
@@ -59,6 +59,9 @@
 #define V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
 #define V_LO_THRESHOLD_LIGHT_mV			8000 // Яркость изменяется от V_LO_THRESHOLD_LIGHT_mV до Vbat
 
+#define T_HI_WARNING					106 // опасная температура для двигателя
+#define T_LO_WARNING					0  // низкая температура для двигателя
+
 #define ADC_AVRG_NUM					8 // количество измерений для вычисления медианы
 #define BUTTON_LONG_PRESS_COUNT_LIMIT	(10000/BUTTON_UPDATE_PERIOD_MS) // 10 сек
 #define BUTTON_PRESS_COUNT_LIMIT	    (100/BUTTON_UPDATE_PERIOD_MS) // 100 мсек
@@ -73,7 +76,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint32_t timer_ms_ = 0;
 
 enum button_state {BUTTON_IDLE = 0, BUTTON_PRESS, BUTTON_LPRESS};
 enum button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
@@ -98,6 +100,7 @@ struct
 	uint32_t Vbat_mV;
 	uint32_t Vlight_mV;
 
+
 }cache;
 /* USER CODE END PV */
 
@@ -112,17 +115,7 @@ void SystemClock_Config(void);
 
 
 
-void delay_ms(uint32_t ms)
-{
-	timer_t tim;
-	Timer_set(&tim, timer_ms_, ms);
-	while(!Timer_isExpired(&tim, timer_ms_));
-}
 
-int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
-{
-	return i2c_write(I2C1, SSD1306_I2C_ADDR, &reg, sizeof(reg), buff, size); /// is this need realy?
-}
 
 
 // ===== clock =====
@@ -193,13 +186,13 @@ void Clock_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_clock, timer_ms_, CLOCK_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_clock, Systick_get_counter(), CLOCK_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 
 	int res = 0;
 	if (Clock_edit()) return; // режим настройки
-	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_))
+	if (Timer_isExpired(&cache.tim_update_clock, Systick_get_counter()))
 	{
 		cnt++;
 		if (cnt & 1)
@@ -233,13 +226,13 @@ void Button_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_button, timer_ms_, BUTTON_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_button, Systick_get_counter(), BUTTON_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 	static uint32_t button_counter[BUTTON_RESET+1] = {0};
 	uint8_t button_press[BUTTON_RESET+1];
 	
-	if (Timer_isExpired(&cache.tim_update_button, timer_ms_))
+	if (Timer_isExpired(&cache.tim_update_button, Systick_get_counter()))
 	{
 		button_press[BUTTON_LEFT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5); // ~~~ изменить на реальные!!!
 		button_press[BUTTON_RIGHT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5);
@@ -269,10 +262,10 @@ void Display_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_screen, timer_ms_, SCREEN_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_screen, Systick_get_counter(), SCREEN_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_screen, timer_ms_) ) return;
+	if (!Timer_isExpired(&cache.tim_update_screen, Systick_get_counter()) ) return;
 	// Яркость
 	static uint8_t light = 1;
 	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
@@ -302,10 +295,10 @@ void ADC_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_adc, timer_ms_, ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
+		Timer_set(&cache.tim_update_adc, Systick_get_counter(), ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_adc, timer_ms_)) return;
+	if (!Timer_isExpired(&cache.tim_update_adc, Systick_get_counter())) return;
 	for (int i=Veng; i < size_; i++)
 	{
 		adc[i][curr] = Read_ADC_Channel(channels_[i]);
@@ -331,15 +324,16 @@ void ADC_cycle()
 }
 
 // ===== voltage =====
+
 void Voltage_cycle()
 {
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_voltage, timer_ms_, VOLTAGE_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_voltage, Systick_get_counter(), VOLTAGE_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_voltage, timer_ms_)) return;
+	if (!Timer_isExpired(&cache.tim_update_voltage, Systick_get_counter())) return;
 	uint8_t is_warning = (cache.Vbat_mV < V_BAT_LO_WARNING_mV) || (cache.Vbat_mV > V_BAT_HI_WARNING_mV) ? 1 : 0;
 	char v_mV[12]; // "0123456789AB"
 	Int_to_str(cache.Vbat_mV, v_mV);
@@ -354,6 +348,25 @@ void Voltage_cycle()
 
 void Temperature_cycle()
 {
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_temperature, Systick_get_counter(), TEMPERATURE_UPDATE_PERIOD_MS);
+		ds1621_cfg_t cfg = {0};
+		DS1621_set_cfg(&cfg);
+		Timer_delay_ms(10);
+		DS1621_start_convert();
+		is_init = 1;
+	}
+	if (!Timer_isExpired(&cache.tim_update_temperature, Systick_get_counter())) return;
+	ds1621_temp_t temp = DS1621_get_temp();
+	uint8_t is_warning = (temp.temp <= T_LO_WARNING) || (temp.temp >= T_HI_WARNING) ? 1 : 0;
+	char str_temp[12];
+	Int_to_str(temp.temp, str_temp);
+	char disp[7] ="  -33C";
+	disp[5] = str_temp[11]; disp[4] = str_temp[10]; disp[3] = str_temp[9];
+	ssd1306_SetCursor(80, 16);
+	ssd1306_WriteString(disp, 0, is_warning);
 
 }
 
@@ -393,9 +406,8 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC_Init();
   MX_I2C1_Init();
-  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  ssd1306_Init(ssd1306_i2c_write, delay_ms);
+  ssd1306_Init();
 
 
 
@@ -525,7 +537,10 @@ int main(void)
   /* USER CODE END 3 */
 }
 
-
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_0);
@@ -533,6 +548,9 @@ void SystemClock_Config(void)
   {
   }
   LL_PWR_SetRegulVoltageScaling(LL_PWR_REGU_VOLTAGE_SCALE1);
+  while (LL_PWR_IsActiveFlag_VOS() != 0)
+  {
+  }
   LL_RCC_HSI_Enable();
 
    /* Wait till HSI is ready */
