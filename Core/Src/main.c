@@ -39,10 +39,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CLOCK_UPDATE_PERIOD_MS 			1000
+#define CLOCK_UPDATE_PERIOD_MS 			500
+#define VOLTAGE_UPDATE_PERIOD_MS 		200
+#define TEMPERATURE_UPDATE_PERIOD_MS 	2000
+
 #define BUTTON_UPDATE_PERIOD_MS 		10
 #define ADC_UPDATE_PERIOD_MS 			100 // полный цикл. Если смотрим из 8 измерений - разделим на 8
-#define SCREEN_UPDATE_PERIOD_MS 		1000
+#define SCREEN_UPDATE_PERIOD_MS 		100
 
 #define R_HI_V_ENG						102458 // В омах - верхний(на питании) резистор на Veng
 #define R_LO_V_ENG						12458
@@ -80,11 +83,14 @@ struct
 	// clock
 	DS3231_t time;
 	timer_t tim_update_clock;	
+	// voltage
+	timer_t tim_update_voltage;
+	// temperature
+	timer_t tim_update_temperature;
 	// button
 	timer_t tim_update_button;	
 	enum button_state button_state[BUTTON_RESET+1];	
 	// screen
-	char is_screen_Update; // флаг быстрого обновления - не раз в секунду там,
 	timer_t tim_update_screen;
 	// adc
 	timer_t tim_update_adc;
@@ -120,11 +126,6 @@ int ssd1306_i2c_write(uint8_t reg, uint8_t*buff, uint16_t size)
 
 
 // ===== clock =====
-void Clock_init()
-{
-	Timer_set(&cache.tim_update_clock, timer_ms_, CLOCK_UPDATE_PERIOD_MS);
-
-}
 
 int Clock_edit()
 {
@@ -177,7 +178,6 @@ int Clock_edit()
 				time_str[4] = '0' + new_minutes%10;
 				ssd1306_SetCursor(0, 0);
 				ssd1306_WriteString(time_str, 1, 1);
-				cache.is_screen_Update = 1;
 			}
 			break;
 		default:
@@ -190,10 +190,17 @@ void Clock_cycle()
 {
 	static uint8_t cnt = 0;
 	static char time_str[6] = {[5]=0};
-	int res = 0;	
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_clock, timer_ms_, CLOCK_UPDATE_PERIOD_MS);
+		is_init = 1;
+	}
+
+	int res = 0;
+	if (Clock_edit()) return; // режим настройки
 	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_))
 	{
-		if (Clock_edit()) return; // режим настройки
 		cnt++;
 		if (cnt & 1)
 			res = DS3231_Read(&cache.time);		
@@ -221,13 +228,14 @@ void Clock_cycle()
 
 // ===== button =====
 
-void Button_init()
-{
-	Timer_set(&cache.tim_update_button, timer_ms_, BUTTON_UPDATE_PERIOD_MS);
-}
-
 void Button_cycle()
 {
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_button, timer_ms_, BUTTON_UPDATE_PERIOD_MS);
+		is_init = 1;
+	}
 	static uint32_t button_counter[BUTTON_RESET+1] = {0};
 	uint8_t button_press[BUTTON_RESET+1];
 	
@@ -256,14 +264,15 @@ void Button_cycle()
 
 // ===== screen =====
 
-void Display_init()
-{
-	cache.is_screen_Update = 1;
-	Timer_set(&cache.tim_update_screen, timer_ms_, SCREEN_UPDATE_PERIOD_MS);
-}
-
 void Display_cycle()
 {
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_screen, timer_ms_, SCREEN_UPDATE_PERIOD_MS);
+		is_init = 1;
+	}
+	if (!Timer_isExpired(&cache.tim_update_screen, timer_ms_) ) return;
 	// Яркость
 	static uint8_t light = 1;
 	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
@@ -277,18 +286,10 @@ void Display_cycle()
 		light = new_light;
 	}
 
-	if (Timer_isExpired(&cache.tim_update_screen, timer_ms_) || cache.is_screen_Update)
-		ssd1306_UpdateScreen();
-	cache.is_screen_Update = 0;
-
+	ssd1306_UpdateScreen();
 }
 
 // ===== adc =====
-
-void ADC_init()
-{
-	Timer_set(&cache.tim_update_adc, timer_ms_, ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
-}
 
 void ADC_cycle()
 {
@@ -298,6 +299,12 @@ void ADC_cycle()
 	static uint16_t adc[size_][ADC_AVRG_NUM] = {0};
 	static uint8_t curr = 0;
 
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_adc, timer_ms_, ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
+		is_init = 1;
+	}
 	if (!Timer_isExpired(&cache.tim_update_adc, timer_ms_)) return;
 	for (int i=Veng; i < size_; i++)
 	{
@@ -320,6 +327,33 @@ void ADC_cycle()
 		V = GetMedian_16(&adc[Vlight][0], ADC_AVRG_NUM);
 		cache.Vlight_mV = GET_mV(V, k) * (R_HI_V_LIGHT + R_LO_V_LIGHT) / R_LO_V_LIGHT;
 	}
+
+}
+
+// ===== voltage =====
+void Voltage_cycle()
+{
+	static uint8_t is_init = 0;
+	if (!is_init)
+	{
+		Timer_set(&cache.tim_update_voltage, timer_ms_, VOLTAGE_UPDATE_PERIOD_MS);
+		is_init = 1;
+	}
+	if (!Timer_isExpired(&cache.tim_update_voltage, timer_ms_)) return;
+	uint8_t is_warning = (cache.Vbat_mV < V_BAT_LO_WARNING_mV) || (cache.Vbat_mV > V_BAT_HI_WARNING_mV) ? 1 : 0;
+	char v_mV[12]; // "0123456789AB"
+	Int_to_str(cache.Vbat_mV, v_mV);
+	char v[7] =" 12.5v";
+	v[4] = v_mV[9]; v[2] = v_mV[8]; v[1] = v_mV[7];
+
+	ssd1306_SetCursor(80, 0);
+	ssd1306_WriteString(v, 0, is_warning);
+}
+
+// ===== temperature =====
+
+void Temperature_cycle()
+{
 
 }
 
@@ -361,7 +395,6 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  delay_ms(100);
   ssd1306_Init(ssd1306_i2c_write, delay_ms);
 
 
@@ -369,14 +402,6 @@ int main(void)
   //ssd1306_DrawCircle(10, 10, 5, SSD1306_COLOR_WHITE);
   //ssd1306_UpdateScreen();
 
-  ssd1306_Fill(SSD1306_COLOR_BLACK);
-  ssd1306_SetCursor(0, 0);
-  ssd1306_WriteString("22:54", 1, 0);
-  ssd1306_SetCursor(80, 0);
-  ssd1306_WriteString(" 12.5v", 0, 0);
-  ssd1306_SetCursor(80, 16);
-  ssd1306_WriteString("  -28c", 0, 1);
-  ssd1306_UpdateScreen();
 
   //res = DS1307_Read(&cache.time);
   /*for (int y=0; y<32; y++)
@@ -483,9 +508,6 @@ int main(void)
   };
 
 
-  Clock_init();
-  Button_init();
-  Display_init();
 
 
   while (1)
@@ -493,11 +515,12 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  Clock_cycle();
+	//  Clock_cycle();
 	  Button_cycle();
-
-
-	  Display_cycle(); // последний - обновляет экран
+	  ADC_cycle();
+	  Voltage_cycle();
+	  Temperature_cycle();
+	  Display_cycle();
   }
   /* USER CODE END 3 */
 }
