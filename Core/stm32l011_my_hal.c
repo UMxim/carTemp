@@ -209,9 +209,43 @@ uint16_t Read_ADC_Channel(uint32_t channel) //  LL_ADC_CHANNEL_X или LL_ADC_C
     return LL_ADC_REG_ReadConversionData12(ADC1);
 }
 
-// ===== SysTick =====
+// ===== ms_timer =====
 
-volatile uint32_t systick_ms = 0;
+volatile uint32_t timer_ms = 0;
+
+void timer_ms_init()	// пока для tim2
+{
+    // 1. Включить тактирование нужного таймера
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    // 2. Сбросить регистры таймера (опционально, но рекомендуется)
+    RCC->APB1RSTR |= RCC_APB1RSTR_TIM2RST;
+    RCC->APB1RSTR &= ~RCC_APB1RSTR_TIM2RST;
+    // 3. Рассчитать prescaler для 1 мкс тика
+    // Требуемая частота таймера = 1 MHz → prescaler = SystemCoreClock / 1'000'000 - 1
+    uint32_t prescaler = SystemCoreClock / 1000000U - 1U;
+    // 4. Настроить таймер
+    TIM2->PSC = prescaler;     // Prescaler
+    TIM2->ARR = 999;           // Auto-reload: 1000 тиков = 1 мс (0..999 → 1000)
+    TIM2->EGR = TIM_EGR_UG;    // Generate update event to reload PSC/ARR
+    TIM2->SR = 0;              // Clear all status flags
+    // 5. Включить прерывание по обновлению
+    TIM2->DIER |= TIM_DIER_UIE;
+    // 6. Запустить таймер
+    TIM2->CR1 |= TIM_CR1_CEN;
+    // 7. Включить прерывание в NVIC
+    NVIC_EnableIRQ(TIM2_IRQn);
+}
+
+void TIM2_IRQHandler(void)
+{
+    if (TIM2->SR & TIM_SR_UIF)
+    {
+        TIM2->SR &= ~TIM_SR_UIF; // Clear update flag
+        timer_ms++;
+    }
+}
+
+
 
 // ===== Disable boot =====
 

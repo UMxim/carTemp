@@ -186,13 +186,13 @@ void Clock_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_clock, Systick_get_counter(), CLOCK_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_clock, timer_ms_get_counter(), CLOCK_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 
 	int res = 0;
 	if (Clock_edit()) return; // режим настройки
-	if (Timer_isExpired(&cache.tim_update_clock, Systick_get_counter()))
+	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_get_counter()))
 	{
 		cnt++;
 		if (cnt & 1)
@@ -226,13 +226,13 @@ void Button_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_button, Systick_get_counter(), BUTTON_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_button, timer_ms_get_counter(), BUTTON_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 	static uint32_t button_counter[BUTTON_R+1] = {0};
 	uint8_t button_press[BUTTON_R+1];
 	
-	if (Timer_isExpired(&cache.tim_update_button, Systick_get_counter()))
+	if (Timer_isExpired(&cache.tim_update_button, timer_ms_get_counter()))
 	{
 		button_press[BUTTON_H] =  !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_14);
 		button_press[BUTTON_M] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
@@ -263,10 +263,10 @@ void Display_cycle()
 	if (!is_init)
 	{
 		ssd1306_Init();
-		Timer_set(&cache.tim_update_screen, Systick_get_counter(), SCREEN_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_screen, timer_ms_get_counter(), SCREEN_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_screen, Systick_get_counter()) ) return;
+	if (!Timer_isExpired(&cache.tim_update_screen, timer_ms_get_counter()) ) return;
 	// Яркость
 	static uint8_t light = 1;
 	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
@@ -296,10 +296,10 @@ void ADC_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_adc, Systick_get_counter(), ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
+		Timer_set(&cache.tim_update_adc, timer_ms_get_counter(), ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_adc, Systick_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_adc, timer_ms_get_counter())) return;
 	for (int i=Veng; i < size_; i++)
 	{
 		adc[i][curr] = Read_ADC_Channel(channels_[i]);
@@ -331,10 +331,10 @@ void Voltage_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_voltage, Systick_get_counter(), VOLTAGE_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_voltage, timer_ms_get_counter(), VOLTAGE_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_voltage, Systick_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_voltage, timer_ms_get_counter())) return;
 	uint8_t is_warning = (cache.Vbat_mV < V_BAT_LO_WARNING_mV) || (cache.Vbat_mV > V_BAT_HI_WARNING_mV) ? 1 : 0;
 	char v_mV[12]; // "0123456789AB"
 	Int_to_str(cache.Vbat_mV, v_mV);
@@ -352,14 +352,14 @@ void Temperature_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_temperature, Systick_get_counter(), TEMPERATURE_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_temperature, timer_ms_get_counter(), TEMPERATURE_UPDATE_PERIOD_MS);
 		ds1621_cfg_t cfg = {0};
 		DS1621_set_cfg(&cfg);
 		Timer_delay_ms(10);
 		DS1621_start_convert();
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_temperature, Systick_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_temperature, timer_ms_get_counter())) return;
 	ds1621_temp_t temp = DS1621_get_temp();
 	uint8_t is_warning = (temp.temp <= T_LO_WARNING) || (temp.temp >= T_HI_WARNING) ? 1 : 0;
 	char str_temp[12];
@@ -409,7 +409,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  timer_ms_init();
 //  SetOptionBytes_For_FlashBoot();
 
 

@@ -36,11 +36,9 @@ uint16_t Read_ADC_Channel(uint32_t channel);
 
 // ===== SysTick =====
 
-extern volatile uint32_t systick_ms;
-
-static inline void Timer_delay_ms(uint32_t ms) {LL_mDelay(ms);}
-
-static inline uint32_t Systick_get_counter() {return systick_ms;}
+extern volatile uint32_t timer_ms;
+void timer_ms_init();	// пока для tim2
+static inline uint32_t timer_ms_get_counter() {return timer_ms;}
 
 void SetOptionBytes_For_FlashBoot(void);
 
