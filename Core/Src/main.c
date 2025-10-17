@@ -79,7 +79,7 @@
 /* USER CODE BEGIN PV */
 
 enum button_state {BUTTON_IDLE = 0, BUTTON_PRESS, BUTTON_LPRESS};
-enum button_name {BUTTON_LEFT =0, BUTTON_RIGHT, BUTTON_RESET};
+enum button_name {BUTTON_H =0, BUTTON_M, BUTTON_R};
 
 struct
 {	
@@ -92,7 +92,7 @@ struct
 	timer_t tim_update_temperature;
 	// button
 	timer_t tim_update_button;	
-	enum button_state button_state[BUTTON_RESET+1];	
+	enum button_state button_state[BUTTON_R+1];
 	// screen
 	timer_t tim_update_screen;
 	// adc
@@ -130,36 +130,32 @@ int Clock_edit()
 	switch (state)
 	{
 		case 0:
-			if (cache.button_state[BUTTON_RESET] == BUTTON_LPRESS)
-			{				
-				cache.button_state[BUTTON_RESET] = BUTTON_IDLE;
+			if (cache.button_state[BUTTON_R] == BUTTON_LPRESS)
+			{
 				new_hour = cache.time.hours_10 * 10 + cache.time.hours;
 				new_minutes = cache.time.minutes_10 * 10 + cache.time.minutes;
 				state = 1;
 			}
 			break;
 		case 1:
-			if (cache.button_state[BUTTON_LEFT] == BUTTON_PRESS)
+			if (cache.button_state[BUTTON_H] == BUTTON_PRESS)
 			{
 				if (new_hour < 23) new_hour++ ; else new_hour = 0;
-				cache.button_state[BUTTON_LEFT] = BUTTON_IDLE;
 				need_update = 1;
 			}
 			
-			if (cache.button_state[BUTTON_RIGHT] == BUTTON_PRESS)
+			if (cache.button_state[BUTTON_M] == BUTTON_PRESS)
 			{
 				if (new_minutes < 59) new_minutes++ ; else new_minutes = 0;
-				cache.button_state[BUTTON_RIGHT] = BUTTON_IDLE;
 				need_update = 1;
 			}
 				
-			if (cache.button_state[BUTTON_RESET] == BUTTON_PRESS)
+			if (cache.button_state[BUTTON_R] == BUTTON_PRESS)
 			{
 				uint32_t last_correct_sec = EEPROM_ReadWord(0);// Прочитать из еепррма
 				int res = DS3231_correct(new_hour, new_minutes, 0, &last_correct_sec);
 				if (res > 0 ) EEPROM_WriteWord(0, last_correct_sec); // а тут записать в еепром
-				res = DS3231_Read(&cache.time);		
-				cache.button_state[BUTTON_RESET] = BUTTON_IDLE;
+				res = DS3231_Read(&cache.time);
 				state = 0;
 			}
 			if (need_update)
@@ -177,6 +173,9 @@ int Clock_edit()
 		default:
 			break;
 	}
+	cache.button_state[BUTTON_R] = BUTTON_IDLE;
+	cache.button_state[BUTTON_H] = BUTTON_IDLE;
+	cache.button_state[BUTTON_M] = BUTTON_IDLE;
 	return state;
 }
 
@@ -230,16 +229,16 @@ void Button_cycle()
 		Timer_set(&cache.tim_update_button, Systick_get_counter(), BUTTON_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	static uint32_t button_counter[BUTTON_RESET+1] = {0};
-	uint8_t button_press[BUTTON_RESET+1];
+	static uint32_t button_counter[BUTTON_R+1] = {0};
+	uint8_t button_press[BUTTON_R+1];
 	
 	if (Timer_isExpired(&cache.tim_update_button, Systick_get_counter()))
 	{
-		button_press[BUTTON_LEFT] =  !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_14);
-		button_press[BUTTON_RIGHT] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
-		button_press[BUTTON_RESET] = !LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_7);
+		button_press[BUTTON_H] =  !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_14);
+		button_press[BUTTON_M] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
+		button_press[BUTTON_R] = !LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_7);
 		
-		for (int i=BUTTON_LEFT; i<=BUTTON_RESET; i++)
+		for (int i=BUTTON_H; i<=BUTTON_R; i++)
 		{		
 			if (button_press[i])
 				button_counter[i]++;
@@ -263,6 +262,7 @@ void Display_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
+		ssd1306_Init();
 		Timer_set(&cache.tim_update_screen, Systick_get_counter(), SCREEN_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
@@ -274,7 +274,7 @@ void Display_cycle()
 						(cache.Veng_mV > V_LO_THRESHOLD_mV) ? 0xFF : 	// Едем но без фар
 						0x01;	// На батарейке
 	uint8_t delta = (new_light > light) ? new_light - light : light - new_light;
-	if(delta > 10) // 4%
+	if(delta > 0) // 0%
 	{
 		ssd1306_SetContrast(light);
 		light = new_light;
@@ -409,8 +409,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  __enable_irq();
-  ssd1306_Init();
+
 //  SetOptionBytes_For_FlashBoot();
 
 
@@ -430,101 +429,6 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  cache.time = (DS3231_t){
-      // === Текущее время и дата ===
-      .seconds      = 0,  // Секунды (0–9), младший разряд в BCD
-      .seconds_10   = 0,  // Секунды (0–5), десятки в BCD
-      .seconds_rfu  = 0,  // Зарезервировано (должно быть 0)
-
-      .minutes      = 8,  // Минуты (0–9), младший разряд в BCD
-      .minutes_10   = 2,  // Минуты (0–5), десятки в BCD
-      .minutes_rfu  = 0,  // Зарезервировано (должно быть 0)
-
-      .hours        = 3,  // Часы (0–9), младший разряд в BCD
-      .hours_10     = 2,  // Часы (0–2), десятки в BCD (макс. 2 для 24-часового режима)
-      .hours_12     = 0,  // 1 = 12-часовой режим, 0 = 24-часовой режим
-      .hours_rfu    = 0,  // Зарезервировано (должно быть 0)
-
-      .day          = 0,  // День недели (1–7, где 1 = воскресенье по умолчанию)
-      .day_rfu      = 0,  // Зарезервировано (должно быть 0)
-
-      .date         = 0,  // День месяца (1–9), младший разряд в BCD
-      .date_10      = 0,  // День месяца (0–3), десятки в BCD (макс. 31)
-      .date_rfu     = 0,  // Зарезервировано (должно быть 0)
-
-      .month        = 0,  // Месяц (1–9), младший разряд в BCD
-      .month_10     = 0,  // Месяц (0–1), десятки в BCD (макс. 12 → 1)
-      .month_rfu    = 0,  // Зарезервировано (должно быть 0)
-      .century      = 0,  // Флаг столетия: 1 = 20xx, 0 = 19xx
-
-      .year         = 0,  // Год (0–9), младший разряд в BCD (например, 5 для 2025)
-      .year_10      = 0,  // Год (0–9), десятки в BCD (например, 2 для 2025 → 25)
-
-      // === Будильник 1 ===
-      .a1_seconds      = 0,  // Секунды будильника 1 (0–9), BCD
-      .a1_seconds_10   = 0,  // Десятки секунд будильника 1 (0–5), BCD
-      .a1_m1           = 0,  // Бит маски A1M1: 1 = игнорировать секунды
-
-      .a1_minutes      = 0,  // Минуты будильника 1 (0–9), BCD
-      .a1_minutes_10   = 0,  // Десятки минут будильника 1 (0–5), BCD
-      .a1_m2           = 0,  // Бит маски A1M2: 1 = игнорировать минуты
-
-      .a1_hours        = 0,  // Часы будильника 1 (0–9), BCD
-      .a1_hours_10     = 0,  // Десятки часов будильника 1 (0–2), BCD
-      .a1_hours_12     = 0,  // Режим времени будильника: 1 = 12-часовой, 0 = 24-часовой
-      .a1_m3           = 0,  // Бит маски A1M3: 1 = игнорировать часы
-
-      .a1_date         = 0,  // День (месяца или недели) для будильника 1, BCD
-      .a1_date_10      = 0,  // Десятки дня (0–3), BCD
-      .a1_dy_dt        = 0,  // 1 = день недели, 0 = день месяца
-      .a1_m4           = 0,  // Бит маски A1M4: 1 = игнорировать дату/день недели
-
-      // === Будильник 2 ===
-      .a2_minutes      = 0,  // Минуты будильника 2 (0–9), BCD
-      .a2_minutes_10   = 0,  // Десятки минут будильника 2 (0–5), BCD
-      .a2_m2           = 0,  // Бит маски A2M2: 1 = игнорировать минуты
-
-      .a2_hours        = 0,  // Часы будильника 2 (0–9), BCD
-      .a2_hours_10     = 0,  // Десятки часов будильника 2 (0–2), BCD
-      .a2_hours_12     = 0,  // Режим времени будильника 2: 1 = 12-часовой, 0 = 24-часовой
-      .a2_m3           = 0,  // Бит маски A2M3: 1 = игнорировать часы
-
-      .a2_date         = 0,  // День (месяца или недели) для будильника 2, BCD
-      .a2_date_10      = 0,  // Десятки дня (0–3), BCD
-      .a2_dy_dt        = 0,  // 1 = день недели, 0 = день месяца
-      .a2_m4           = 0,  // Бит маски A2M4: 1 = игнорировать дату/день недели
-
-      // === Регистр Control (0x0E) ===
-      .a1_ie        = 0,  // Alarm 1 Interrupt Enable: 1 = разрешить прерывание от будильника 1
-      .a2_ie        = 0,  // Alarm 2 Interrupt Enable: 1 = разрешить прерывание от будильника 2
-      .int_cn       = 0,  // Interrupt Control: 1 = INT как прерывание, 0 = как square wave
-      .rs1          = 0,  // Rate Select 1 (вместе с rs2): частота SQW
-      .rs2          = 0,  // Rate Select 2
-      .conv         = 1,  // Convert Temperature: 1 = запуск измерения температуры
-      .bbsqw        = 0,  // Battery-Backed SQW: 1 = SQW активен при питании от батареи
-      .EOSC         = 0,  // Enable Oscillator: 1 = остановить генератор, 0 = запустить
-
-      // === Регистр Status (0x0F) ===
-      .a1f          = 0,  // Alarm 1 Flag: 1 = сработал будильник 1 (сбрасывается записью 0)
-      .a2f          = 0,  // Alarm 2 Flag: 1 = сработал будильник 2
-      .bsy          = 0,  // Busy: 1 = идёт запись в EEPROM (нельзя читать/писать)
-      .en32khz      = 0,  // Enable 32kHz Output: 1 = включить выход 32kHz
-      .cfg_rfu      = 0,  // Зарезервировано (должно быть 0)
-      .osf          = 0,  // Oscillator Stop Flag: 1 = генератор останавливался
-
-      // === Aging Offset (0x10) ===
-      .aging_offset = 0,  // Значение коррекции частоты (~0.1 ppm)
-
-      // === Температура (0x11–0x12) ===
-      .temperature_MSB      = 0,  // Старший байт температуры (биты 15–8)
-
-      .temperature_LSB_rfu  = 0,  // Зарезервировано (всегда 0)
-      .temperature_LSB      = 0,  // Младшие 2 бита температуры: 00=.0°C, 01=.25°C, 10=.5°C, 11=.75°C
-  };
-
-
-
-
   while (1)
   {
     /* USER CODE END WHILE */
