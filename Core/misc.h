@@ -26,8 +26,9 @@ typedef struct
 	uint32_t period;
 } timer_t;
 
-void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period);
+void Timer_set(timer_t *tim, uint32_t period);
 
-uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time);
+uint8_t Timer_isExpired(timer_t *tim);
 
+void Timer_delay_ms(uint32_t ms);
 #endif //__MISC_H__

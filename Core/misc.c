@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "misc.h"
+#include "stm32l011_my_hal.h"
 
 static void _Sort(uint16_t *arr, int n)
 {
@@ -58,16 +59,16 @@ int32_t Int_to_str(int32_t var, char str[12])
 
 // ===== timers =====
 
-void Timer_set(timer_t *tim, uint32_t current_time, uint32_t period)
+void Timer_set(timer_t *tim, uint32_t period)
 {
-	tim->timeStamp = current_time;
+	tim->timeStamp = timer_ms;
 	tim->period = period;
 }
 
-uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
+uint8_t Timer_isExpired(timer_t *tim)
 {
 	if (tim->period == 0) return 0; // не взведён или остановлен
-	if (current_time - tim->timeStamp >= tim->period)
+	if (timer_ms - tim->timeStamp >= tim->period)
 	{
 		tim->timeStamp += tim->period;
 		return 1;
@@ -75,4 +76,9 @@ uint8_t Timer_isExpired(timer_t *tim, uint32_t current_time)
 	return 0;
 }
 
-
+void Timer_delay_ms(uint32_t ms)
+{
+	timer_t tim;
+	Timer_set(&tim, ms);
+	while (!Timer_isExpired(&tim)) ;
+}

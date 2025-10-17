@@ -20,7 +20,6 @@
 #include "main.h"
 #include "adc.h"
 #include "i2c.h"
-#include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -48,12 +47,12 @@
 #define ADC_UPDATE_PERIOD_MS 			100 // полный цикл. Если смотрим из 8 измерений - разделим на 8
 #define SCREEN_UPDATE_PERIOD_MS 		100
 
-#define R_HI_V_ENG						102458 // В омах - верхний(на питании) резистор на Veng
-#define R_LO_V_ENG						12458
-#define R_HI_V_BAT						102458
-#define R_LO_V_BAT						12458
-#define R_HI_V_LIGHT					102458
-#define R_LO_V_LIGHT					12458
+#define R_HI_V_ENG						83200 // В омах - верхний(на питании) резистор на Veng
+#define R_LO_V_ENG						19860
+#define R_HI_V_BAT						82400
+#define R_LO_V_BAT						19890
+#define R_HI_V_LIGHT					81800
+#define R_LO_V_LIGHT					19940
 
 #define V_BAT_HI_WARNING_mV				14600 // опасно высокое напряжение
 #define V_BAT_LO_WARNING_mV				12000 // опасно низкое напряжение
@@ -186,13 +185,13 @@ void Clock_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_clock, timer_ms_get_counter(), CLOCK_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_clock, CLOCK_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 
-	int res = 0;
+	static int res = 0;
 	if (Clock_edit()) return; // режим настройки
-	if (Timer_isExpired(&cache.tim_update_clock, timer_ms_get_counter()))
+	if (Timer_isExpired(&cache.tim_update_clock))
 	{
 		cnt++;
 		if (cnt & 1)
@@ -216,7 +215,6 @@ void Clock_cycle()
 		ssd1306_SetCursor(0, 0);
 		ssd1306_WriteString(time_str, 1, 0);
 	}
-	
 }
 
 // ===== button =====
@@ -226,13 +224,13 @@ void Button_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_button, timer_ms_get_counter(), BUTTON_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_button, BUTTON_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
 	static uint32_t button_counter[BUTTON_R+1] = {0};
 	uint8_t button_press[BUTTON_R+1];
 	
-	if (Timer_isExpired(&cache.tim_update_button, timer_ms_get_counter()))
+	if (Timer_isExpired(&cache.tim_update_button))
 	{
 		button_press[BUTTON_H] =  !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_14);
 		button_press[BUTTON_M] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
@@ -244,8 +242,7 @@ void Button_cycle()
 				button_counter[i]++;
 			else 
 			{
-				if ((button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) &&
-					(cache.button_state[i] != BUTTON_LPRESS))
+				if ((button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) && (button_counter[i] < BUTTON_LONG_PRESS_COUNT_LIMIT))
 					cache.button_state[i] = BUTTON_PRESS;
 				button_counter[i] = 0;
 			}
@@ -263,10 +260,10 @@ void Display_cycle()
 	if (!is_init)
 	{
 		ssd1306_Init();
-		Timer_set(&cache.tim_update_screen, timer_ms_get_counter(), SCREEN_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_screen, SCREEN_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_screen, timer_ms_get_counter()) ) return;
+	if (!Timer_isExpired(&cache.tim_update_screen) ) return;
 	// Яркость
 	static uint8_t light = 1;
 	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
@@ -288,18 +285,17 @@ void Display_cycle()
 void ADC_cycle()
 {
 	enum channels_name { Veng = 0, Vbat, Vlight, Vref, size_};
-	#warning (correct channels num)
-	const uint32_t channels_[size_] = {LL_ADC_CHANNEL_1, LL_ADC_CHANNEL_3, LL_ADC_CHANNEL_11, LL_ADC_CHANNEL_VREFINT}; //
+	const uint32_t channels_[size_] = {LL_ADC_CHANNEL_0, LL_ADC_CHANNEL_1, LL_ADC_CHANNEL_4, LL_ADC_CHANNEL_VREFINT}; //
 	static uint16_t adc[size_][ADC_AVRG_NUM] = {0};
 	static uint8_t curr = 0;
 
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_adc, timer_ms_get_counter(), ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
+		Timer_set(&cache.tim_update_adc, ADC_UPDATE_PERIOD_MS / ADC_AVRG_NUM);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_adc, timer_ms_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_adc)) return;
 	for (int i=Veng; i < size_; i++)
 	{
 		adc[i][curr] = Read_ADC_Channel(channels_[i]);
@@ -331,10 +327,10 @@ void Voltage_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_voltage, timer_ms_get_counter(), VOLTAGE_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_voltage, VOLTAGE_UPDATE_PERIOD_MS);
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_voltage, timer_ms_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_voltage)) return;
 	uint8_t is_warning = (cache.Vbat_mV < V_BAT_LO_WARNING_mV) || (cache.Vbat_mV > V_BAT_HI_WARNING_mV) ? 1 : 0;
 	char v_mV[12]; // "0123456789AB"
 	Int_to_str(cache.Vbat_mV, v_mV);
@@ -352,14 +348,14 @@ void Temperature_cycle()
 	static uint8_t is_init = 0;
 	if (!is_init)
 	{
-		Timer_set(&cache.tim_update_temperature, timer_ms_get_counter(), TEMPERATURE_UPDATE_PERIOD_MS);
+		Timer_set(&cache.tim_update_temperature, TEMPERATURE_UPDATE_PERIOD_MS);
 		ds1621_cfg_t cfg = {0};
 		DS1621_set_cfg(&cfg);
 		Timer_delay_ms(10);
 		DS1621_start_convert();
 		is_init = 1;
 	}
-	if (!Timer_isExpired(&cache.tim_update_temperature, timer_ms_get_counter())) return;
+	if (!Timer_isExpired(&cache.tim_update_temperature)) return;
 	ds1621_temp_t temp = DS1621_get_temp();
 	uint8_t is_warning = (temp.temp <= T_LO_WARNING) || (temp.temp >= T_HI_WARNING) ? 1 : 0;
 	char str_temp[12];
@@ -407,11 +403,11 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC_Init();
   MX_I2C1_Init();
-  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   timer_ms_init();
 //  SetOptionBytes_For_FlashBoot();
-
+  volatile uint32_t temp = EEPROM_ReadWord(0);
+  if (temp == 0 ) 	  EEPROM_WriteWord(0, 0xDEADBEEF);
 
   //ssd1306_DrawCircle(10, 10, 5, SSD1306_COLOR_WHITE);
   //ssd1306_UpdateScreen();
@@ -434,12 +430,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	//  Clock_cycle();
+	  Clock_cycle();
 	  Button_cycle();
-	//  ADC_cycle();
+
+
+
+	  ADC_cycle();
 	//  Voltage_cycle();
 	//  Temperature_cycle();
-	//  Display_cycle();
+	  Display_cycle();
   }
   /* USER CODE END 3 */
 }
