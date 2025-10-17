@@ -212,3 +212,33 @@ uint16_t Read_ADC_Channel(uint32_t channel) //  LL_ADC_CHANNEL_X или LL_ADC_C
 // ===== SysTick =====
 
 volatile uint32_t systick_ms = 0;
+
+// ===== Disable boot =====
+
+#define OPT_PEKEY1           (0xFBEAD9C8U)
+#define OPT_PEKEY2           (0x24252627U)
+
+void SetOptionBytes_For_FlashBoot(void)
+{
+	// Чёта не работает( Крче надо в C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32CubeProgrammer.exe OptionsByte выставить nBoot_Sel = 1 и nBoot0 = 1
+	/*
+    if ((FLASH->OPTR & 0xE0000000U) == 0x60000000U) return; // nBOOT1=1, nBOOT0=1, nBOOT_SEL=1
+
+    // Разблокировка
+    FLASH->PEKEYR = 0x89ABCDEFU;
+    FLASH->PEKEYR = 0x02030405U;
+    FLASH->OPTKEYR = OPT_PEKEY1;
+    FLASH->OPTKEYR = OPT_PEKEY2;
+
+    // Новое значение: nBOOT1=1 (31), nBOOT0=1 (30), nBOOT_SEL=1 (29)
+    uint32_t new_optr = (FLASH->OPTR & 0x1FFFFFFFU) | 0x60000000U;
+
+    FLASH->OPTR = new_optr;
+    while (FLASH->SR & FLASH_SR_BSY); // Ждём записи!
+
+    FLASH->PECR |= FLASH_PECR_OBL_LAUNCH; // Запрос сброса
+
+    // Больше НИЧЕГО не делаем — МК должен сброситься!*
+    while (1); // На всякий случай, но обычно не нужно*/
+}
+

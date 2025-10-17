@@ -42,4 +42,6 @@ static inline void Timer_delay_ms(uint32_t ms) {LL_mDelay(ms);}
 
 static inline uint32_t Systick_get_counter() {return systick_ms;}
 
+void SetOptionBytes_For_FlashBoot(void);
+
 #endif /* STM32L011_MY_HAL_H_ */

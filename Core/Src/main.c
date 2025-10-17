@@ -20,6 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "i2c.h"
+#include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -234,9 +235,9 @@ void Button_cycle()
 	
 	if (Timer_isExpired(&cache.tim_update_button, Systick_get_counter()))
 	{
-		button_press[BUTTON_LEFT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5); // ~~~ изменить на реальные!!!
-		button_press[BUTTON_RIGHT] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5);
-		button_press[BUTTON_RESET] = LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_5);
+		button_press[BUTTON_LEFT] =  !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_14);
+		button_press[BUTTON_RIGHT] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
+		button_press[BUTTON_RESET] = !LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_7);
 		
 		for (int i=BUTTON_LEFT; i<=BUTTON_RESET; i++)
 		{		
@@ -406,9 +407,11 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  __enable_irq();
   ssd1306_Init();
-
+//  SetOptionBytes_For_FlashBoot();
 
 
   //ssd1306_DrawCircle(10, 10, 5, SSD1306_COLOR_WHITE);
@@ -529,10 +532,10 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	//  Clock_cycle();
 	  Button_cycle();
-	  ADC_cycle();
-	  Voltage_cycle();
-	  Temperature_cycle();
-	  Display_cycle();
+	//  ADC_cycle();
+	//  Voltage_cycle();
+	//  Temperature_cycle();
+	//  Display_cycle();
   }
   /* USER CODE END 3 */
 }
