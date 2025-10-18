@@ -42,4 +42,9 @@ static inline uint32_t timer_ms_get_counter() {return timer_ms;}
 
 void SetOptionBytes_For_FlashBoot(void);
 
+// ===== IWDGT =====
+
+void IWDG_Start_MaxTimeout(void);
+void IWDG_Refresh(void);
+
 #endif /* STM32L011_MY_HAL_H_ */

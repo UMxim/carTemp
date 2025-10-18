@@ -59,6 +59,9 @@
 #define V_LO_THRESHOLD_mV				2000 // считаем что напряжения нет
 #define V_LO_THRESHOLD_LIGHT_mV			8000 // Яркость изменяется от V_LO_THRESHOLD_LIGHT_mV до Vbat
 
+#define VOLTAGE_CORRECT_K 				67650 // Почему-то расхождение с реальным показанием - добавляем
+#define VOLTAGE_CORRECT_B 				-159 // Почему-то расхождение с реальным показанием - добавляем
+
 #define T_HI_WARNING					106 // опасная температура для двигателя
 #define T_LO_WARNING					0  // низкая температура для двигателя
 
@@ -190,9 +193,11 @@ void Clock_cycle()
 	}
 
 	static int res = 0;
-	if (Clock_edit()) return; // режим настройки
+	int is_clock_edit = Clock_edit(); // режим настройки
 	if (Timer_isExpired(&cache.tim_update_clock))
 	{
+		if (is_clock_edit) return;
+
 		cnt++;
 		if (cnt & 1)
 			res = DS3231_Read(&cache.time);		
@@ -266,16 +271,30 @@ void Display_cycle()
 	if (!Timer_isExpired(&cache.tim_update_screen) ) return;
 	// Яркость
 	static uint8_t light = 1;
-	if (cache.Vlight_mV > cache.Veng_mV) cache.Vlight_mV = cache.Veng_mV;
-	uint8_t new_light = (cache.Vlight_mV > V_LO_THRESHOLD_LIGHT_mV) ? 0xFF - ( (cache.Vlight_mV - V_LO_THRESHOLD_LIGHT_mV) * 0xFF / (cache.Veng_mV - V_LO_THRESHOLD_LIGHT_mV) ) :	// подсветка включена. от 8 до 14 вольт
-						(cache.Veng_mV > V_LO_THRESHOLD_mV) ? 0xFF : 	// Едем но без фар
-						0x01;	// На батарейке
-	uint8_t delta = (new_light > light) ? new_light - light : light - new_light;
-	if(delta > 0) // 0%
+	uint8_t new_light = 0;
+	do
 	{
-		ssd1306_SetContrast(light);
-		light = new_light;
-	}
+		if (cache.Veng_mV < V_LO_THRESHOLD_mV)	// Зажигание выключено - минимальная яркость
+		{
+			new_light = 0;
+			break;
+		}
+		if (cache.Vlight_mV < V_LO_THRESHOLD_LIGHT_mV)	// Фары выключены. Значит светло, Значит Макс
+		{
+			new_light = 0xFF;
+			break;
+		}
+		// Фары включены - смотрим напряжение
+		if (cache.Vlight_mV > cache.Veng_mV)
+		{
+			new_light = 0;
+			break;
+		}
+		new_light = 0xFF - ( (cache.Vlight_mV - V_LO_THRESHOLD_LIGHT_mV) * 0xFF / (cache.Veng_mV - V_LO_THRESHOLD_LIGHT_mV) );
+	} while (0);
+
+	ssd1306_SetContrast(light);
+	light = new_light;
 
 	ssd1306_UpdateScreen();
 }
@@ -285,7 +304,7 @@ void Display_cycle()
 void ADC_cycle()
 {
 	enum channels_name { Veng = 0, Vbat, Vlight, Vref, size_};
-	const uint32_t channels_[size_] = {LL_ADC_CHANNEL_0, LL_ADC_CHANNEL_1, LL_ADC_CHANNEL_4, LL_ADC_CHANNEL_VREFINT}; //
+	const uint32_t channels_[size_] = {LL_ADC_CHANNEL_1, LL_ADC_CHANNEL_0, LL_ADC_CHANNEL_4, LL_ADC_CHANNEL_VREFINT}; //
 	static uint16_t adc[size_][ADC_AVRG_NUM] = {0};
 	static uint8_t curr = 0;
 
@@ -310,12 +329,15 @@ void ADC_cycle()
 
 		V = GetMedian_16(&adc[Veng][0], ADC_AVRG_NUM);
 		cache.Veng_mV = GET_mV(V, k) * (R_HI_V_ENG + R_LO_V_ENG) / R_LO_V_ENG;
+		cache.Veng_mV = ((VOLTAGE_CORRECT_K * cache.Veng_mV)>>16) + VOLTAGE_CORRECT_B;
 
 		V = GetMedian_16(&adc[Vbat][0], ADC_AVRG_NUM);
 		cache.Vbat_mV = GET_mV(V, k) * (R_HI_V_BAT + R_LO_V_BAT) / R_LO_V_BAT;
+		cache.Vbat_mV = ((VOLTAGE_CORRECT_K * cache.Vbat_mV)>>16) + VOLTAGE_CORRECT_B;
 
 		V = GetMedian_16(&adc[Vlight][0], ADC_AVRG_NUM);
 		cache.Vlight_mV = GET_mV(V, k) * (R_HI_V_LIGHT + R_LO_V_LIGHT) / R_LO_V_LIGHT;
+		cache.Vlight_mV = ((VOLTAGE_CORRECT_K * cache.Vlight_mV)>>16) + VOLTAGE_CORRECT_B;
 	}
 
 }
@@ -335,7 +357,8 @@ void Voltage_cycle()
 	char v_mV[12]; // "0123456789AB"
 	Int_to_str(cache.Vbat_mV, v_mV);
 	char v[7] =" 12.5v";
-	v[4] = v_mV[9]; v[2] = v_mV[8]; v[1] = v_mV[7];
+	//			0123456
+	v[4] = v_mV[8]; v[2] = v_mV[7]; v[1] = v_mV[6];
 
 	ssd1306_SetCursor(80, 0);
 	ssd1306_WriteString(v, 0, is_warning);
@@ -360,8 +383,8 @@ void Temperature_cycle()
 	uint8_t is_warning = (temp.temp <= T_LO_WARNING) || (temp.temp >= T_HI_WARNING) ? 1 : 0;
 	char str_temp[12];
 	Int_to_str(temp.temp, str_temp);
-	char disp[7] ="  -33C";
-	disp[5] = str_temp[11]; disp[4] = str_temp[10]; disp[3] = str_temp[9];
+	char disp[7] ="  -33c";
+	disp[4] = str_temp[10]; disp[3] = str_temp[9]; disp[2] = str_temp[8];
 	ssd1306_SetCursor(80, 16);
 	ssd1306_WriteString(disp, 0, is_warning);
 
@@ -405,22 +428,7 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   timer_ms_init();
-//  SetOptionBytes_For_FlashBoot();
-  volatile uint32_t temp = EEPROM_ReadWord(0);
-  if (temp == 0 ) 	  EEPROM_WriteWord(0, 0xDEADBEEF);
-
-  //ssd1306_DrawCircle(10, 10, 5, SSD1306_COLOR_WHITE);
-  //ssd1306_UpdateScreen();
-
-
-  //res = DS1307_Read(&cache.time);
-  /*for (int y=0; y<32; y++)
-	  for(int x=0; x<128; x++)
-	  {
-		  ssd1306_DrawPixel(x, y, SSD1306_COLOR_WHITE);
-		  ssd1306_UpdateScreen();
-	  }
-*/
+  IWDG_Start_MaxTimeout();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -432,13 +440,12 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  Clock_cycle();
 	  Button_cycle();
-
-
-
 	  ADC_cycle();
-	//  Voltage_cycle();
-	//  Temperature_cycle();
+	  Voltage_cycle();
+	  Temperature_cycle();
 	  Display_cycle();
+
+	  IWDG_Refresh();
   }
   /* USER CODE END 3 */
 }

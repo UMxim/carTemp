@@ -276,3 +276,28 @@ void SetOptionBytes_For_FlashBoot(void)
     while (1); // На всякий случай, но обычно не нужно*/
 }
 
+// ===== IWDGT =====
+
+void IWDG_Start_MaxTimeout(void)
+{
+    // 1. Разрешить запись в регистры IWDG (ключ 0x5555)
+    IWDG->KR = 0x5555;
+
+    // 2. Установить максимальный prescaler = 256
+    IWDG->PR = IWDG_PR_PR_2 | IWDG_PR_PR_1 | IWDG_PR_PR_0; // 0b111 = 256
+
+    // 3. Установить максимальное значение reload = 0xFFF (4095)
+    IWDG->RLR = 0xFFF;
+
+    // 4. Перезагрузить счётчик (загрузить RLR в счётчик)
+    IWDG->KR = 0xAAAA;
+
+    // 5. Запустить IWDG (ключ 0xCCCC) — после этого отключить нельзя!
+    IWDG->KR = 0xCCCC;
+}
+
+// Сброс (refresh) watchdog — "погладить собаку"
+void IWDG_Refresh(void)
+{
+    IWDG->KR = 0xAAAA; // reload counter
+}
