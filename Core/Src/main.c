@@ -380,6 +380,7 @@ void Temperature_cycle()
 	}
 	if (!Timer_isExpired(&cache.tim_update_temperature)) return;
 	ds1621_temp_t temp = DS1621_get_temp();
+	DS1621_start_convert();
 	uint8_t is_warning = (temp.temp <= T_LO_WARNING) || (temp.temp >= T_HI_WARNING) ? 1 : 0;
 	char str_temp[12];
 	Int_to_str(temp.temp, str_temp);

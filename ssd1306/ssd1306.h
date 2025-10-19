@@ -18,6 +18,8 @@
 #define SSD1306_WIDTH           128
 #define SSD1306_BUFFER_SIZE   (SSD1306_WIDTH * SSD1306_HEIGHT / 8)
 
+#define SSD1306_MIRROR_VERT
+#define SSD1306_MIRROR_HORIZ
 //_BEGIN_STD_C
 
 //#include "ssd1306_conf.h"

@@ -22,7 +22,7 @@ static int ds1621_i2c_write(uint8_t reg, uint8_t *buff, uint16_t size)
 
 static int ds1621_i2c_read(uint8_t reg, uint8_t *buff, uint16_t size)
 {
-	return i2c_read(DS1621_I2C, DS1621_I2C_ADDR, NULL, 0, buff, size);
+	return i2c_read(DS1621_I2C, DS1621_I2C_ADDR, &reg, sizeof(reg), buff, size);
 }
 
 
