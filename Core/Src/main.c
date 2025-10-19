@@ -128,7 +128,7 @@ int Clock_edit()
 	static uint8_t state = 0;
 	static uint8_t new_hour = 0;
 	static uint8_t new_minutes = 0;
-	uint8_t need_update = 0;
+	static uint8_t need_update = 0;
 	switch (state)
 	{
 		case 0:
@@ -137,6 +137,7 @@ int Clock_edit()
 				new_hour = cache.time.hours_10 * 10 + cache.time.hours;
 				new_minutes = cache.time.minutes_10 * 10 + cache.time.minutes;
 				state = 1;
+				need_update = 1;
 			}
 			break;
 		case 1:
@@ -170,6 +171,7 @@ int Clock_edit()
 				time_str[4] = '0' + new_minutes%10;
 				ssd1306_SetCursor(0, 0);
 				ssd1306_WriteString(time_str, 1, 1);
+				need_update = 0;
 			}
 			break;
 		default:
