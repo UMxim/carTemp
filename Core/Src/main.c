@@ -134,7 +134,8 @@
 enum button_state {
     BUTTON_IDLE = 0,   ///< Кнопка не нажата
     BUTTON_PRESS,      ///< Короткое нажатие (100 мс <= t < 10 сек)
-    BUTTON_LPRESS      ///< Длинное нажатие (t >= 10 сек)
+    BUTTON_LPRESS,      ///< Длинное нажатие (t >= 10 сек)
+	BUTTON_READED	// состояние прочитано, сбрасывайте
 };
 
 /**
@@ -145,6 +146,13 @@ enum button_name {
     BUTTON_M,          ///< Средняя кнопка (Minutes)
     BUTTON_R           ///< Правая кнопка (Right / Enter)
 };
+
+typedef enum  {
+	LIGHT_MODE_AUTO = 0,
+	LIGHT_MODE_MIN,
+	LIGHT_MODE_MAX,
+	LIGHT_MODE_NUM
+}light_mode_t;
 
 /**
  * @brief Глобальный кэш состояния системы
@@ -172,6 +180,7 @@ struct {
 
     // --- Дисплей ---
     timer_t tim_update_screen;      ///< Таймер обновления OLED
+    light_mode_t light_mode;
 } cache;
 
 /* USER CODE END PV */
@@ -263,9 +272,9 @@ int Clock_edit(void)
     }
 
     // Сброс состояния кнопок после обработки (защита от повторного срабатывания)
-    cache.button_state[BUTTON_R] = BUTTON_IDLE;
-    cache.button_state[BUTTON_H] = BUTTON_IDLE;
-    cache.button_state[BUTTON_M] = BUTTON_IDLE;
+    cache.button_state[BUTTON_R] = BUTTON_READED;
+    if (cache.button_state[BUTTON_H] == BUTTON_PRESS)  cache.button_state[BUTTON_H] = BUTTON_READED; // обработка долгого нажатия в другом месте - light
+    cache.button_state[BUTTON_M] = BUTTON_READED;
 
     return state;
 }
@@ -356,19 +365,30 @@ void Button_cycle(void)
         button_press[BUTTON_M] = !LL_GPIO_IsInputPinSet(GPIOC, LL_GPIO_PIN_15);
         button_press[BUTTON_R] = !LL_GPIO_IsInputPinSet(GPIOA, LL_GPIO_PIN_7);
 
-        for (int i = BUTTON_H; i <= BUTTON_R; i++) {
-            if (button_press[i]) {
+        for (int i = BUTTON_H; i <= BUTTON_R; i++)
+        {
+        	if (cache.button_state[i] == BUTTON_READED)
+        	{
+        		cache.button_state[i] = BUTTON_IDLE;
+        		button_counter[i] = 0;
+        	}
+            if (button_press[i])
+            {
                 button_counter[i]++;
-            } else {
+            }
+            else
+            {
                 // Кнопка отпущена — анализируем длительность нажатия
                 if ((button_counter[i] > BUTTON_PRESS_COUNT_LIMIT) &&
-                    (button_counter[i] < BUTTON_LONG_PRESS_COUNT_LIMIT)) {
+                    (button_counter[i] < BUTTON_LONG_PRESS_COUNT_LIMIT))
+                {
                     cache.button_state[i] = BUTTON_PRESS;
                 }
                 button_counter[i] = 0; // Сброс счётчика
             }
             // Проверка на длинное нажатие (даже если кнопка всё ещё нажата)
-            if (button_counter[i] >= BUTTON_LONG_PRESS_COUNT_LIMIT) {
+            if (button_counter[i] >= BUTTON_LONG_PRESS_COUNT_LIMIT)
+            {
                 cache.button_state[i] = BUTTON_LPRESS;
             }
         }
@@ -438,21 +458,40 @@ int _calc_light_pwm(uint16_t *pwm_duty)
 void Display_cycle(void)
 {
     static uint8_t is_init = 0;
+
     if (!is_init) {
         ssd1306_Init(); // �?нициализация OLED
         Timer_set(&cache.tim_update_screen, SCREEN_UPDATE_PERIOD_MS);
+        uint8_t light_mode = EEPROM_ReadWord(4);
+        if (light_mode < LIGHT_MODE_NUM)
+        	cache.light_mode = (light_mode_t)light_mode;
         is_init = 1;
     }
+
+    if (cache.button_state[BUTTON_H] == BUTTON_LPRESS)
+    {
+    	cache.button_state[BUTTON_H] = BUTTON_READED;
+    	cache.light_mode++;
+    	if (cache.light_mode == LIGHT_MODE_NUM)
+    		cache.light_mode = LIGHT_MODE_AUTO;
+    	EEPROM_WriteWord(4, (uint32_t)cache.light_mode);
+    }
+
 
     if (!Timer_isExpired(&cache.tim_update_screen)) return;
 
     static uint8_t light = 1; // Текущая яркость
-
     // Расчёт новой яркости
     do {
     if (cache.Veng_mV < V_LO_THRESHOLD_mV) // Зажигание выключено
     {
-    	light = 0;
+    //	light = 0;
+    //	break;
+    }
+
+    if (cache.light_mode != LIGHT_MODE_AUTO)
+    {
+    	light = cache.light_mode == LIGHT_MODE_MIN ? 0 : 0XFF;
     	break;
     }
 
