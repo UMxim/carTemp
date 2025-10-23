@@ -364,6 +364,18 @@ void TIM2_IRQHandler(void)
     }
 }
 
+uint32_t timer_get_mks()
+{
+	uint32_t timer_ms_0 = timer_ms;
+	uint32_t timer_cnt_0 = TIM2->CNT;
+	uint32_t timer_ms_1 = timer_ms;
+	uint32_t timer_cnt_1 = TIM2->CNT;
+	if(timer_ms_0 == timer_ms_1)
+		return timer_ms_0 * 1000u + timer_cnt_0;
+	else
+		return timer_ms_1 * 1000u + timer_cnt_1;
+}
+
 // ===== Disable boot =====
 
 /// @brief Ключи для разблокировки Option Bytes.

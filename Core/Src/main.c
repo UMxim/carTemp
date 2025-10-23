@@ -46,7 +46,6 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
@@ -62,11 +61,16 @@
 #include "stm32l011_my_hal.h"
 /* USER CODE END Includes */
 
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
 // -------------------------------------------------------------------------
-// ПЕРИОДЫ ОБНОВЛЕНИЯ (в миллисекундах)
+// ПЕР�?ОДЫ ОБНОВЛЕН�?Я (в миллисекундах)
 // -------------------------------------------------------------------------
 #define CLOCK_UPDATE_PERIOD_MS          500     ///< Обновление времени дважды в секунду (для мигания двоеточия)
 #define VOLTAGE_UPDATE_PERIOD_MS        200     ///< Обновление напряжения АКБ 5 раз/сек
@@ -74,10 +78,11 @@
 #define BUTTON_UPDATE_PERIOD_MS         10      ///< Опрос кнопок каждые 10 мс (антидребезг)
 #define ADC_UPDATE_PERIOD_MS            100     ///< Полный цикл АЦП (включая усреднение по 8 точкам)
 #define SCREEN_UPDATE_PERIOD_MS         100     ///< Обновление OLED раз в 100 мс
+#define CALC_PWM_PERIOD_MS         		12
 
 // -------------------------------------------------------------------------
-// ПАРАМЕТРЫ ДЕЛИТЕЛЕЙ НАПРЯЖЕНИЯ (в омах)
-// Используются для расчёта реального напряжения по показаниям АЦП:
+// ПАРАМЕТРЫ ДЕЛ�?ТЕЛЕЙ НАПРЯЖЕН�?Я (в омах)
+// �?спользуются для расчёта реального напряжения по показаниям АЦП:
 //   V_реал = V_АЦП * (R_HI + R_LO) / R_LO
 // -------------------------------------------------------------------------
 #define R_HI_V_ENG                      83200   ///< Верхний резистор делителя для напряжения зажигания
@@ -88,7 +93,7 @@
 #define R_LO_V_LIGHT                    19940   ///< Нижний резистор делителя для напряжения фар
 
 // -------------------------------------------------------------------------
-// ПОРОГИ ПРЕДУПРЕЖДЕНИЙ (в милливольтах и градусах Цельсия)
+// ПОРОГ�? ПРЕДУПРЕЖДЕН�?Й (в милливольтах и градусах Цельсия)
 // -------------------------------------------------------------------------
 #define V_BAT_HI_WARNING_mV             14600   ///< Предупреждение: напряжение АКБ > 14.6 В (перезаряд)
 #define V_BAT_LO_WARNING_mV             12000   ///< Предупреждение: напряжение АКБ < 12.0 В (разряд)
@@ -98,7 +103,7 @@
 #define T_LO_WARNING                    0       ///< Предупреждение: температура <= 0°C
 
 // -------------------------------------------------------------------------
-// КАЛИБРОВКА АЦП
+// КАЛ�?БРОВКА АЦП
 // Эмпирические коэффициенты для коррекции систематической ошибки измерений.
 // Формула: V_корр = ((V_расч * VOLTAGE_CORRECT_K) >> 16) + VOLTAGE_CORRECT_B
 // -------------------------------------------------------------------------
@@ -106,7 +111,7 @@
 #define VOLTAGE_CORRECT_B               -159    ///< Аддитивная поправка, мВ
 
 // -------------------------------------------------------------------------
-// ПАРАМЕТРЫ ОБРАБОТКИ КНОПОК
+// ПАРАМЕТРЫ ОБРАБОТК�? КНОПОК
 // -------------------------------------------------------------------------
 #define ADC_AVRG_NUM                    8       ///< Количество выборок АЦП для медианной фильтрации
 #define BUTTON_LONG_PRESS_COUNT_LIMIT   (10000 / BUTTON_UPDATE_PERIOD_MS)  ///< 1000 = 10 сек (длинное нажатие)
@@ -114,12 +119,13 @@
 
 /* USER CODE END PD */
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
 
-/* USER CODE END PTD */
+/* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
 /* USER CODE BEGIN PV */
 
 /**
@@ -132,7 +138,7 @@ enum button_state {
 };
 
 /**
- * @brief Имена кнопок (соответствуют физическим кнопкам)
+ * @brief �?мена кнопок (соответствуют физическим кнопкам)
  */
 enum button_name {
     BUTTON_H = 0,      ///< Левая кнопка (High / Hours)
@@ -156,7 +162,6 @@ struct {
     timer_t tim_update_adc;         ///< Таймер АЦП
     uint32_t Veng_mV;               ///< Напряжение зажигания (мВ)
     uint32_t Vbat_mV;               ///< Напряжение АКБ (мВ)
-    uint32_t Vlight_mV;             ///< Напряжение фар (мВ)
 
     // --- Температура ---
     timer_t tim_update_temperature; ///< Таймер обновления температуры
@@ -247,7 +252,7 @@ int Clock_edit(void)
                 time_str[3] = '0' + new_minutes / 10;
                 time_str[4] = '0' + new_minutes % 10;
                 ssd1306_SetCursor(0, 0);
-                ssd1306_WriteString(time_str, 1, 1); // Инвертированный текст
+                ssd1306_WriteString(time_str, 1, 1); // �?нвертированный текст
                 need_update = 0;
             }
             break;
@@ -370,6 +375,51 @@ void Button_cycle(void)
     }
 }
 
+
+
+int _calc_light_pwm(uint16_t *pwm_duty)
+{
+	timer_t _timer;
+	Timer_set(&_timer, CALC_PWM_PERIOD_MS);
+	uint8_t first_pin_state = !!LL_GPIO_IsInputPinSet(light_pwm_GPIO_Port, light_pwm_Pin);
+	uint8_t num_changes = 0; // количество фронтов
+	uint8_t last_pin = first_pin_state;
+	uint8_t current_pin;
+	uint32_t front_timestamp[3];
+
+	while(!Timer_isExpired(&_timer))
+	{
+		current_pin = !!LL_GPIO_IsInputPinSet(light_pwm_GPIO_Port, light_pwm_Pin);
+		if (current_pin != last_pin)
+		{
+			front_timestamp[num_changes++] = timer_get_mks();
+			if (num_changes == 3) break;
+		}
+		last_pin = current_pin;
+	}
+
+	if(num_changes == 0) // фронтов небыло
+	{
+		*pwm_duty = first_pin_state ? 0xFF : 0;
+		return 1;
+	}
+
+	if(num_changes != 3) // не расчитали полный период
+		return -1;
+
+	uint16_t t0 = (uint16_t)(front_timestamp[1] - front_timestamp[0]);
+	uint16_t t1 = (uint16_t)(front_timestamp[2] - front_timestamp[1]);
+
+	if ((t0 < 200) || (t1 < 200))	// слишком малые периоды
+		return -2;
+
+	uint16_t period = front_timestamp[2] - front_timestamp[0]; // полный период
+	uint16_t pulse = (first_pin_state) ? t1 : t0;               // длительность HIGH
+	*pwm_duty = (uint16_t)((0xFFFFul * pulse) / period);
+
+	return 1;
+}
+
 /**
  * @brief Цикл управления OLED-дисплеем SSD1306
  *
@@ -377,7 +427,7 @@ void Button_cycle(void)
  *   1. Если Veng < V_LO_THRESHOLD_mV (2 В) → зажигание выключено → яркость = 0 (минимум).
  *   2. Если Vlight < V_LO_THRESHOLD_LIGHT_mV (8 В) → фары выключены → считаем, что днём → яркость = 0xFF (максимум).
  *   3. Если Vlight > Veng → ошибка подключения → яркость = 0.
- *   4. Иначе (фары включены, зажигание включено):
+ *   4. �?наче (фары включены, зажигание включено):
  *        яркость = 0xFF - (Vlight - 8000) * 0xFF / (Veng - 8000)
  *        → чем выше Vlight (ближе к Veng), тем темнее экран.
  *
@@ -389,50 +439,42 @@ void Display_cycle(void)
 {
     static uint8_t is_init = 0;
     if (!is_init) {
-        ssd1306_Init(); // Инициализация OLED
+        ssd1306_Init(); // �?нициализация OLED
         Timer_set(&cache.tim_update_screen, SCREEN_UPDATE_PERIOD_MS);
         is_init = 1;
     }
 
     if (!Timer_isExpired(&cache.tim_update_screen)) return;
 
-    static uint8_t light = 1; // Текущая яркость (сохраняется между вызовами)
-    uint8_t new_light = 0;
+    static uint8_t light = 1; // Текущая яркость
 
     // Расчёт новой яркости
     do {
-        // Зажигание выключено
-        if (cache.Veng_mV < V_LO_THRESHOLD_mV) {
-            new_light = 0;
-            break;
-        }
+    if (cache.Veng_mV < V_LO_THRESHOLD_mV) // Зажигание выключено
+    {
+    	light = 0;
+    	break;
+    }
 
-        // Фары выключены → днём → макс. яркость
-        if (cache.Vlight_mV < V_LO_THRESHOLD_LIGHT_mV) {
-            new_light = 0xFF;
-            break;
-        }
+    uint16_t pwm_duty;
+    int res = _calc_light_pwm(&pwm_duty);
+    if (res <= 0)
+    	break;
 
-        // Защита от некорректных данных
-        if (cache.Vlight_mV > cache.Veng_mV) {
-            new_light = 0;
-            break;
-        }
+    const uint16_t p_max = 4ul * 0xFFFFul / 5ul; // минимальная подсветка если  будет больше, то light = 0
 
-        // Фары включены → регулируем яркость по напряжению
-        // Линейная зависимость от 8 В (макс. яркость) до Veng (мин. яркость)
-        uint32_t numerator = (cache.Vlight_mV - V_LO_THRESHOLD_LIGHT_mV) * 0xFF;
-        uint32_t denominator = (cache.Veng_mV - V_LO_THRESHOLD_LIGHT_mV);
-        if (denominator == 0) {
-            new_light = 0xFF; // На всякий случай
-        } else {
-            new_light = 0xFF - (uint8_t)(numerator / denominator);
-        }
-    } while (0);
+    if (pwm_duty >= p_max )// при pwm = 4/5 - минимальная подсветка
+    {
+    	light = 0;
+    	break;
+    }
 
+    // k = 5 * 0xFF / (4 * 0xFFFF)  b=0xFF light = b - k* pwm_duty
+    light = 0xFF - (5ul * 0xFFul * pwm_duty)/(4ul * 0xFFFFul);
+
+    } while(0);
     // Применяем новую яркость
     ssd1306_SetContrast(light);
-    light = new_light;
 
     // Обновляем содержимое экрана
     ssd1306_UpdateScreen();
@@ -441,7 +483,7 @@ void Display_cycle(void)
 /**
  * @brief Цикл измерения аналоговых напряжений
  *
- * Измеряемые каналы:
+ * �?змеряемые каналы:
  *   - Veng: LL_ADC_CHANNEL_1 → напряжение зажигания
  *   - Vbat: LL_ADC_CHANNEL_0 → напряжение АКБ
  *   - Vlight: LL_ADC_CHANNEL_4 → напряжение фар
@@ -459,11 +501,10 @@ void Display_cycle(void)
  */
 void ADC_cycle(void)
 {
-    enum channels_name { Veng = 0, Vbat, Vlight, Vref, size_ };
+    enum channels_name { Veng = 0, Vbat, Vref, size_ };
     const uint32_t channels_[size_] = {
         LL_ADC_CHANNEL_1,           // Veng
         LL_ADC_CHANNEL_0,           // Vbat
-        LL_ADC_CHANNEL_4,           // Vlight
         LL_ADC_CHANNEL_VREFINT      // Vref
     };
 
@@ -501,10 +542,6 @@ void ADC_cycle(void)
         cache.Vbat_mV = GET_mV(V, k) * (R_HI_V_BAT + R_LO_V_BAT) / R_LO_V_BAT;
         cache.Vbat_mV = ((VOLTAGE_CORRECT_K * cache.Vbat_mV) >> 16) + VOLTAGE_CORRECT_B;
 
-        // Обработка Vlight
-        V = GetMedian_16(&adc[Vlight][0], ADC_AVRG_NUM);
-        cache.Vlight_mV = GET_mV(V, k) * (R_HI_V_LIGHT + R_LO_V_LIGHT) / R_LO_V_LIGHT;
-        cache.Vlight_mV = ((VOLTAGE_CORRECT_K * cache.Vlight_mV) >> 16) + VOLTAGE_CORRECT_B;
     }
 }
 
@@ -598,86 +635,130 @@ void Temperature_cycle(void)
   */
 int main(void)
 {
-  /* MCU Configuration */
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_SYSCFG);
   LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+
+  /* SysTick_IRQn interrupt configuration */
   NVIC_SetPriority(SysTick_IRQn, 3);
 
-  /* System Clock */
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
   SystemClock_Config();
 
-  /* Peripheral Initialization */
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ADC_Init();
   MX_I2C1_Init();
-
   /* USER CODE BEGIN 2 */
-  timer_ms_init();              // Инициализация программных таймеров
+  timer_ms_init();              // �?нициализация программных таймеров
   IWDG_Start_MaxTimeout();      // Запуск сторожевого таймера (~32 сек)
   /* USER CODE END 2 */
 
   /* Infinite loop */
-  while (1) {
-    Clock_cycle();              // Обновление времени
-    Button_cycle();             // Опрос кнопок
-    ADC_cycle();                // Измерение напряжений
-    Voltage_cycle();            // Отображение напряжения АКБ
-    Temperature_cycle();        // Измерение и отображение температуры
-    Display_cycle();            // Обновление OLED и яркости
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+	  Clock_cycle();              // Обновление времени
+	  Button_cycle();             // Опрос кнопок
+	  ADC_cycle();                // Измерение напряжений
+	  Voltage_cycle();            // Отображение напряжения АКБ
+	  Temperature_cycle();        // Измерение и отображение температуры
+	  Display_cycle();            // Обновление OLED и яркости
 
-    IWDG_Refresh();             // Сброс сторожевого таймера
+	  IWDG_Refresh();             // Сброс сторожевого таймера
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
   }
+  /* USER CODE END 3 */
 }
 
 /**
   * @brief System Clock Configuration
-  * @details
-  * Используется внутренний HSI (16 МГц) без PLL.
-  * Тактирование:
-  *   - SYSCLK = 16 МГц,
-  *   - AHB = 16 МГц,
-  *   - APB1/APB2 = 16 МГц.
-  * Источник тактирования I2C1 — PCLK1.
+  * @retval None
   */
 void SystemClock_Config(void)
 {
   LL_FLASH_SetLatency(LL_FLASH_LATENCY_0);
-  while(LL_FLASH_GetLatency() != LL_FLASH_LATENCY_0) {}
-
+  while(LL_FLASH_GetLatency()!= LL_FLASH_LATENCY_0)
+  {
+  }
   LL_PWR_SetRegulVoltageScaling(LL_PWR_REGU_VOLTAGE_SCALE1);
-  while (LL_PWR_IsActiveFlag_VOS() != 0) {}
-
+  while (LL_PWR_IsActiveFlag_VOS() != 0)
+  {
+  }
   LL_RCC_HSI_Enable();
-  while(LL_RCC_HSI_IsReady() != 1) {}
-  LL_RCC_HSI_SetCalibTrimming(16);
 
+   /* Wait till HSI is ready */
+  while(LL_RCC_HSI_IsReady() != 1)
+  {
+
+  }
+  LL_RCC_HSI_SetCalibTrimming(16);
   LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
   LL_RCC_SetAPB1Prescaler(LL_RCC_APB1_DIV_1);
   LL_RCC_SetAPB2Prescaler(LL_RCC_APB2_DIV_1);
   LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_HSI);
-  while(LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_HSI) {}
+
+   /* Wait till System clock is ready */
+  while(LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_HSI)
+  {
+
+  }
 
   LL_Init1msTick(16000000);
+
   LL_SetSystemCoreClock(16000000);
   LL_RCC_SetI2CClockSource(LL_RCC_I2C1_CLKSOURCE_PCLK1);
 }
 
+/* USER CODE BEGIN 4 */
+
 /* USER CODE END 4 */
 
 /**
-  * @brief  Error handler
-  * @details
-  * При критической ошибке отключает прерывания и зависает в бесконечном цикле.
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
   */
 void Error_Handler(void)
 {
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1) {}
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef USE_FULL_ASSERT
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  // Можно добавить отладочный вывод, если нужно
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

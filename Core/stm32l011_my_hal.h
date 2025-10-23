@@ -147,6 +147,8 @@ void timer_ms_init();	// пока для tim2
  */
 static inline uint32_t timer_ms_get_counter() {return timer_ms;}
 
+
+uint32_t timer_get_mks();
 /**
  * @brief Настройка Option Bytes для загрузки из Flash (не из System Memory).
  */
