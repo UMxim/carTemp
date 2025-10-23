@@ -273,8 +273,8 @@ int Clock_edit(void)
 
     // Сброс состояния кнопок после обработки (защита от повторного срабатывания)
     cache.button_state[BUTTON_R] = BUTTON_READED;
-    if (cache.button_state[BUTTON_H] == BUTTON_PRESS)  cache.button_state[BUTTON_H] = BUTTON_READED; // обработка долгого нажатия в другом месте - light
-    cache.button_state[BUTTON_M] = BUTTON_READED;
+    if (cache.button_state[BUTTON_H] == BUTTON_PRESS) cache.button_state[BUTTON_H] = BUTTON_READED; // обработка долгого нажатия в другом месте - light
+    if (cache.button_state[BUTTON_M] == BUTTON_PRESS) cache.button_state[BUTTON_M] = BUTTON_READED;
 
     return state;
 }
@@ -476,7 +476,12 @@ void Display_cycle(void)
     		cache.light_mode = LIGHT_MODE_AUTO;
     	EEPROM_WriteWord(4, (uint32_t)cache.light_mode);
     }
-
+    if (cache.button_state[BUTTON_M] == BUTTON_LPRESS)
+    {
+      	cache.button_state[BUTTON_H] = BUTTON_READED;
+        cache.light_mode = LIGHT_MODE_AUTO;
+        EEPROM_WriteWord(4, (uint32_t)cache.light_mode);
+    }
 
     if (!Timer_isExpired(&cache.tim_update_screen)) return;
 
@@ -485,8 +490,8 @@ void Display_cycle(void)
     do {
     if (cache.Veng_mV < V_LO_THRESHOLD_mV) // Зажигание выключено
     {
-    //	light = 0;
-    //	break;
+    	light = 0;
+    	break;
     }
 
     if (cache.light_mode != LIGHT_MODE_AUTO)
